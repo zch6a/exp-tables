@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import random
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from itertools import combinations
 
@@ -67,28 +68,34 @@ def _ranks(values: list[float]) -> list[float]:
 
 
 def wilcoxon(a: list[float], b: list[float]) -> Result:
-    """The Wilcoxon signed-rank test on paired values, two-sided: exact for up to 25 pairs without tied differences,
-    the normal approximation (with ties corrected) beyond. Zero differences are dropped.
+    """The Wilcoxon signed-rank test on paired values, two-sided: exact for up to 25 pairs (tied differences too, over
+    their average ranks), the normal approximation (with ties corrected) beyond. Zero differences are dropped;
+    differences are compared at 12 significant digits, so that 90.1 - 80.1 and 90.2 - 80.2 tie as they should.
 
     >>> r = wilcoxon([2, 3, 4, 5, 6], [1, 1, 1, 1, 1])  # every difference positive: P = 2 / 2^5
     >>> r.statistic, r.p
     (0.0, 0.0625)
+    >>> wilcoxon([90.1, 90.2, 90.3, 90.4, 90.5], [80.1, 80.2, 80.3, 80.4, 80.5]).p  # five tied differences: still 2 / 2^5
+    0.0625
+    >>> wilcoxon([1, 2, 3, 4], [0, 0, 0, 5]).p  # d = 1, 2, 3, -1: ranks 1.5, 3, 4, 1.5; W = 1.5; {}, {1.5}, {1.5'}: 2 * 3/16
+    0.375
     """
-    d = [x - y for x, y in zip(a, b, strict=True) if x != y]
+    d = [float(f"{x - y:.12g}") for x, y in zip(a, b, strict=True)]
+    d = [x for x in d if x != 0]
     n = len(d)
     if n == 0:
         return Result("Wilcoxon", 0.0, 1.0)
     ranks = _ranks([abs(x) for x in d])
     w_plus = sum(r for r, x in zip(ranks, d, strict=True) if x > 0)
     w = min(w_plus, n * (n + 1) / 2 - w_plus)
-    tied = len(set(ranks)) < n
-    if n <= 25 and not tied:
-        # the number of subsets of 1..n with each rank sum, by dynamic programming
-        counts = [1] + [0] * (n * (n + 1) // 2)
-        for k in range(1, n + 1):
+    if n <= 25:
+        # the number of sign patterns with each sum of (doubled, so whole) ranks, by dynamic programming
+        doubled = [round(2 * r) for r in ranks]
+        counts = [1] + [0] * sum(doubled)
+        for k in doubled:
             for s in range(len(counts) - 1, k - 1, -1):
                 counts[s] += counts[s - k]
-        p = min(1.0, 2 * sum(counts[: int(w) + 1]) / 2**n)
+        p = min(1.0, 2 * sum(counts[: round(2 * w) + 1]) / 2**n)
         return Result("Wilcoxon", w, p)
     mean = n * (n + 1) / 4
     ties: dict[float, int] = {}
@@ -99,27 +106,35 @@ def wilcoxon(a: list[float], b: list[float]) -> Result:
     return Result("Wilcoxon", w, min(1.0, 2 * t_cdf(z, 1e9)))
 
 
-def bootstrap(a: list[float], b: list[float], resamples: int = 10_000, seed: int = 0) -> Result:
+def bootstrap(a: list[float], b: list[float], resamples: int = 10_000, seed: int = 0, alpha: float | None = None) -> Result:
     """A bootstrap test of the difference in means, two-sided: both groups resampled after shifting them to a common
     mean (so the resamples are what equal means would give); P is the share at least as far from 0 as the difference
-    seen. Seeded: the same answer every time.
+    seen. Seeded: the same answer every time. Given the significance level, it stops early (after 2,000 resamples,
+    in steps of 1,000) once P is more than four standard errors from it: the answer would not change.
 
     >>> bootstrap([1, 2, 3], [1, 2, 3]).p, bootstrap([10.0, 10.1, 9.9, 10.05], [1.0, 1.1, 0.9, 1.05]).p
     (1.0, 0.0)
     """
     rng = random.Random(seed)
-    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    na, nb = len(a), len(b)
+    ma, mb = sum(a) / na, sum(b) / nb
     seen = ma - mb
-    pooled = (sum(a) + sum(b)) / (len(a) + len(b))
+    pooled = (sum(a) + sum(b)) / (na + nb)
     sa = [x - ma + pooled for x in a]
     sb = [x - mb + pooled for x in b]
-    extreme = 0
-    for _ in range(resamples):
-        ra = [sa[rng.randrange(len(sa))] for _ in sa]
-        rb = [sb[rng.randrange(len(sb))] for _ in sb]
-        if abs(sum(ra) / len(ra) - sum(rb) / len(rb)) >= abs(seen) - 1e-12:
-            extreme += 1
-    return Result("bootstrap", seen, extreme / resamples)
+    far = abs(seen) - 1e-12
+    extreme = done = 0
+    while done < resamples:
+        batch = min(1000, resamples - done)
+        for _ in range(batch):
+            if abs(sum(rng.choices(sa, k=na)) / na - sum(rng.choices(sb, k=nb)) / nb) >= far:
+                extreme += 1
+        done += batch
+        if alpha is not None and done >= 2000:
+            p = extreme / done
+            if abs(p - alpha) > 4 * math.sqrt(max(p * (1 - p), 1 / done) / done):
+                break
+    return Result("bootstrap", seen, extreme / done)
 
 
 def holm(ps: list[float]) -> list[float]:
@@ -175,7 +190,8 @@ def cliffs_delta(a: list[float], b: list[float]) -> float:
     >>> cliffs_delta([3, 4, 5], [1, 2, 3])
     0.888889
     """
-    wins = sum((x > y) - (x < y) for x in a for y in b)
+    ordered = sorted(b)
+    wins = sum(bisect_left(ordered, x) - (len(ordered) - bisect_right(ordered, x)) for x in a)  # below x minus above x
     return round(wins / (len(a) * len(b)), 6)
 
 

@@ -11,15 +11,24 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # columns that are part of what a run is, even when they hold numbers
 SEED = re.compile(r"^(?:seed|random[_ ]?seed|run[_ ]?seed|trial|repeat|rep|fold|replicate|run[_ ]?id|run)$", re.I)
-FIELDISH = re.compile(r"(?:^|/)(?:config|params?|hparams?|hyperparameters|args|settings|cfg)(?:/|$)|^(?:id|name|step|epoch|epochs)$", re.I)
+FIELDISH = re.compile(
+    r"(?:^|/)(?:config|params?|hparams?|hyperparameters|args|settings|cfg)(?:/|$)|^(?:id|name|step|epoch|epochs|num[_ ]epochs|"
+    r"lr|learning[_ ]rate|batch[_ ]size|bs|weight[_ ]decay|wd|momentum|dropout|warmup(?:[_ ]steps)?|max[_ ]steps|grad(?:ient)?[_ ]clip|"
+    r"(?:num|n)[_ ]layers|hidden[_ ](?:size|dim)|d[_ ]model)$",
+    re.I,
+)
 # a tracker's bookkeeping, not a result
 META = re.compile(r"^(?:_?runtime|_?timestamp|_?step|_wandb.*|created|state|user|notes|tags|sweep|duration|start[_ ]?time|end[_ ]?time)$", re.I)
+# what a results file writes for a missing value; read as missing, so one failed run does not turn a metric into text
+MISSING = re.compile(r"^(?:nan|na|n/a|none|null|missing|-|--|—|[-+]?inf(?:inity)?|#n/a|#div/0!)$", re.I)
+INDEX = re.compile(r"^(?:|unnamed: ?\d+|index)$", re.I)  # a data frame's row index, written by to_csv()
 NUMBER = re.compile(r"^\s*([-+−]?(?:\d+(?:,\d{3})*(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)\s*(%?)\s*$")
 
 
@@ -33,11 +42,16 @@ class Run:
 def number(text: str) -> float | None:
     """A value as a number: "93.1", "93.1%", "1,234", "1e-3"; None for anything else.
 
-    >>> number("93.1%"), number(" 1,234 "), number("1e-3"), number("n/a"), number("")
-    (93.1, 1234.0, 0.001, None, None)
+    >>> number("93.1%"), number(" 1,234 "), number("1e-3"), number("n/a"), number(""), number("1e999")
+    (93.1, 1234.0, 0.001, None, None, None)
     """
     m = NUMBER.match(text)
-    return float(m.group(1).replace("−", "-").replace(",", "")) if m else None
+    value = float(m.group(1).replace("−", "-").replace(",", "")) if m else None
+    return value if value is not None and math.isfinite(value) else None
+
+
+def _missing(text: str) -> bool:
+    return not text or bool(MISSING.match(text))
 
 
 def _flat(obj: object, prefix: str = "") -> dict[str, object]:
@@ -54,8 +68,8 @@ def _split(values: dict[str, object], source: str) -> Run:
     (a seed, a configuration value); text and booleans are fields."""
     run = Run(source=source)
     for k, v in values.items():
-        if v is None or META.match(k.rsplit("/", 1)[-1]):
-            continue
+        if v is None or META.match(k.rsplit("/", 1)[-1]) or (isinstance(v, float) and not math.isfinite(v)):
+            continue  # NaN and infinities (JSON allows them): missing
         if isinstance(v, bool) or not isinstance(v, (int, float)) or SEED.match(k.rsplit("/", 1)[-1]) or FIELDISH.search(k):
             run.fields[k] = json.dumps(v) if isinstance(v, (list, bool)) else str(v)
         else:
@@ -65,7 +79,8 @@ def _split(values: dict[str, object], source: str) -> Run:
 
 def read_csv(text: str, name: str = "") -> list[Run]:
     """Runs from CSV or TSV (the delimiter is detected). A column is a metric when every value in it is a number
-    (or empty) and its name is not a seed's or a configuration's; the others are fields."""
+    (or missing: empty, "nan", "n/a", "-", …) and its name is not a seed's or a configuration's; the others are fields.
+    A data frame's unnamed index column is left out."""
     sample = text[:20_000]
     try:
         dialect: type[csv.Dialect] | csv.Dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|")
@@ -74,20 +89,20 @@ def read_csv(text: str, name: str = "") -> list[Run]:
     rows = list(csv.DictReader(io.StringIO(text), dialect=dialect))
     if not rows:
         return []
-    columns = [c for c in rows[0] if c is not None]
+    columns = [c for c in rows[0] if c is not None and not INDEX.match(c.strip())]
+    present = {c: [v for r in rows if not _missing(v := (r.get(c) or "").strip())] for c in columns}
     numeric = {
         c
         for c in columns
         if not SEED.match(c) and not FIELDISH.search(c) and not META.match(c)
-        and any((r.get(c) or "").strip() for r in rows)
-        and all(number(r.get(c) or "") is not None for r in rows if (r.get(c) or "").strip())
+        and present[c] and all(number(v) is not None for v in present[c])
     }  # fmt: skip
     runs = []
     for i, r in enumerate(rows, start=2):
         run = Run(source=f"{name}:{i}")
         for c in columns:
             value = (r.get(c) or "").strip()
-            if META.match(c) or not value:
+            if META.match(c) or _missing(value):
                 continue
             if c in numeric:
                 run.metrics[c] = number(value)  # type: ignore[assignment]  # every value of the column is one
@@ -124,9 +139,9 @@ def read_jsonl(text: str, name: str = "") -> list[Run]:
     return out
 
 
-def _mlflow_name(meta: Path) -> str:
+def _mlflow_meta(meta: Path, key: str) -> str:
     try:
-        m = re.search(r"^name:\s*(.+)$", meta.read_text(encoding="utf-8"), re.M)
+        m = re.search(rf"^{key}:\s*(.+)$", meta.read_text(encoding="utf-8"), re.M)
     except OSError:
         return ""
     return m.group(1).strip().strip("'\"") if m else ""
@@ -134,16 +149,22 @@ def _mlflow_name(meta: Path) -> str:
 
 def read_mlflow(folder: Path) -> list[Run]:
     """Runs from an MLflow tracking folder (``mlruns``): each run's parameters and tags become fields (its name
-    "run", its experiment's name "experiment"), each metric its last logged value (by step)."""
+    "run", its experiment's name "experiment"; MLflow's own ``mlflow.*`` tags left out), each metric its last logged
+    value (by step). Deleted runs and experiments are left out."""
     runs = []
     for metrics_dir in sorted(folder.glob("*/*/metrics")):
         run_dir = metrics_dir.parent
+        if "deleted" in (_mlflow_meta(run_dir / "meta.yaml", "lifecycle_stage"), _mlflow_meta(run_dir.parent / "meta.yaml", "lifecycle_stage")):
+            continue
         run = Run(source=run_dir.relative_to(folder).as_posix())
-        experiment = _mlflow_name(run_dir.parent / "meta.yaml")
+        experiment = _mlflow_meta(run_dir.parent / "meta.yaml", "name")
         if experiment:
             run.fields["experiment"] = experiment
         for p in sorted((run_dir / "params").glob("*")) if (run_dir / "params").is_dir() else []:
             run.fields[p.name] = p.read_text(encoding="utf-8").strip()
+        for p in sorted((run_dir / "tags").glob("*")) if (run_dir / "tags").is_dir() else []:
+            if p.is_file() and not p.name.startswith("mlflow."):
+                run.fields.setdefault(p.name, p.read_text(encoding="utf-8").strip())
         name = run_dir / "tags" / "mlflow.runName"
         if name.is_file():
             run.fields["run"] = name.read_text(encoding="utf-8").strip()

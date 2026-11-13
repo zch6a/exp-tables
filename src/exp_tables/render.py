@@ -23,23 +23,36 @@ def _value(c: Cell, decimals: int, spread: str) -> tuple[str, str]:
 def legend(t: Table) -> str:
     """What the marks and the spread mean, in a sentence."""
     spread = {"std": "standard deviation", "sem": "standard error", "ci": "95% confidence interval"}.get(t.spread)
-    parts = [f"mean ± {spread} over seeds" if spread else "mean over seeds"]
-    if t.test != "none":
-        parts.append(f"bold: the best, and any not significantly different from it ({_test_name(t)})")
+    cells = [c for row in t.cells for c in row]
+    if not any(c.summary and c.summary.n > 1 for c in cells):
+        parts = ["one run per cell: no spread"]
     else:
-        parts.append("bold: the best")
-    parts.append("underlined: the second best")
+        parts = [f"mean ± {spread} over seeds" if spread else "mean over seeds"]
+    if t.comparisons:
+        parts.append(f"bold: the best, and any not significantly different from it ({_test_name(t)})")
+    elif any(c.best for c in cells):  # marked as printed: no test asked, or none possible
+        parts.append("bold: the best" + ("" if t.test == "none" else " (untested: that needs two or more seeds in each row)"))
+    if any(c.second for c in cells):
+        parts.append("underlined: the second best")
     return "; ".join(parts) + "."
 
 
 def _test_name(t: Table) -> str:
     names = sorted({c.test for c in t.comparisons})
-    alpha = t.comparisons[0].alpha if t.comparisons else 0.05
-    return f"{', '.join(names) or 'no test possible'}, α = {alpha}, corrected per column"
+    corrected = "uncorrected" if t.correction == "none" else "corrected per column"
+    return f"{', '.join(names)}, α = {t.comparisons[0].alpha}, {corrected}"
 
 
 def _md(s: str) -> str:
-    return s.replace("|", "\\|").replace("*", "\\*").replace("_", "\\_")
+    r"""Text for a Markdown table cell: the characters Markdown would read as markup escaped, and HTML's.
+
+    >>> _md(r"a|b_c*d\ <i>")
+    'a\\|b\\_c\\*d\\\\ &lt;i&gt;'
+    """
+    s = s.replace("\\", "\\\\")
+    for c in "|*_`[]":
+        s = s.replace(c, "\\" + c)
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def markdown(t: Table) -> str:

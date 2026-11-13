@@ -14,4 +14,8 @@ The first release: experiment results to a paper's table, with the best marked o
   significantly different from the best; reports effect sizes and how many seeds a difference would need.
 - **Writes** booktabs LaTeX, Markdown, HTML and JSON; a config file that makes the same table again; `--check` that
   says whether a committed table still matches the results, and a GitHub Action around it.
+- **Says so** when the runs look wrong for the table: several runs of one cell sharing a seed, a Wilcoxon test that
+  cannot reach the significance level with so few pairs, seeds that do not pair up for a paired test.
+- Tested on ten public multi-seed results files from GitHub (layouts, names and missing values as people write
+  them) and on 100,000 runs.
 - No dependencies: the statistics are in the standard library, checked against independent values.

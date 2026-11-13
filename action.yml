@@ -36,27 +36,29 @@ runs:
         ACTION_PATH: ${{ github.action_path }}
       run: |
         args=(--config "$CONFIG")
-        [ -n "$FORMAT" ] && args+=("--format=$FORMAT")
+        if [ -n "$FORMAT" ]; then args+=("--format=$FORMAT"); fi
         set +e
-        out="$(uvx --from "$ACTION_PATH" exp-tables "${args[@]}" --check "$TABLE")"
+        out="$(uvx --from "$ACTION_PATH" exp-tables "${args[@]}" --check "$TABLE" 2>&1)"  # notes and errors too
         code=$?
-        set -e
+        if [ "$code" -eq 0 ]; then echo "matches=true" >> "$GITHUB_OUTPUT"; else echo "matches=false" >> "$GITHUB_OUTPUT"; fi
+        echo "$out"
         {
           echo "### exp-tables: \`$TABLE\`"
           echo
           echo '```diff'
           echo "$out"
           echo '```'
-          echo
-          uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --format markdown
-          echo
-          echo '<details><summary>What the marks rest on</summary>'
-          echo
-          echo '```text'
-          uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --report -o /dev/null
-          echo '```'
-          echo '</details>'
-        } >> "$GITHUB_STEP_SUMMARY"
-        echo "$out"
-        if [ "$code" -eq 0 ]; then echo "matches=true" >> "$GITHUB_OUTPUT"; else echo "matches=false" >> "$GITHUB_OUTPUT"; fi
+          if [ "$code" -ne 2 ]; then
+            echo
+            uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --format markdown 2>/dev/null
+            echo
+            echo '<details><summary>What the marks rest on</summary>'
+            echo
+            echo '```text'
+            uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --report -o "$RUNNER_TEMP/exp-tables-table.txt" 2>/dev/null
+            echo '```'
+            echo '</details>'
+          fi
+        } >> "$GITHUB_STEP_SUMMARY"  # the summary is best effort: set +e still holds, and the exit status is the check's
         if [ "$code" -eq 2 ] || { [ "$code" -ne 0 ] && [ "$FAIL" = "true" ]; }; then exit "$code"; fi
+        exit 0

@@ -12,16 +12,18 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import math
 import os
+import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from . import __version__, render
-from .data import Run, read
+from .data import Run, number, read
 from .report import comparisons
-from .table import Spec, Table, build, latex, resolve
+from .table import Spec, Table, as_fields, build, latex, resolve
 
 SPEC_KEYS = ("rows", "columns", "metrics", "seed", "better", "spread", "decimals", "labels", "test", "alpha", "correction")
 
@@ -41,13 +43,25 @@ def _pairs(items: list[str], what: str) -> dict[str, str]:
     return out
 
 
+TESTS = ("auto", "welch", "paired", "wilcoxon", "bootstrap", "none")
+
+
 def _list(text: str | None) -> list[str]:
     return [x.strip() for x in text.split(",") if x.strip()] if text else []
 
 
-def load_runs(inputs: list[Path], filters: dict[str, str]) -> list[Run]:
-    """The runs of every input (each run told apart by the field "file" when there are several inputs), keeping
-    those whose fields match every filter."""
+def _matches(value: str | None, wanted: str) -> bool:
+    """A field's value against a filter's: as text, or as numbers ("0.10" is 0.1)."""
+    if value == wanted:
+        return True
+    a, b = number(value or ""), number(wanted)
+    return a is not None and a == b
+
+
+def load_runs(inputs: list[Path], filters: dict[str, str], settings: list[str] | None = None) -> list[Run]:
+    """The runs of every input (each run told apart by the field "file" when there are several inputs), with the
+    named settings (and the filtered fields) made fields when they were read as metrics, keeping those whose fields
+    match every filter."""
     runs: list[Run] = []
     for path in inputs:
         if not path.exists():
@@ -56,7 +70,8 @@ def load_runs(inputs: list[Path], filters: dict[str, str]) -> list[Run]:
             if len(inputs) > 1:
                 run.fields.setdefault("file", path.stem if path.is_file() else path.name)
             runs.append(run)
-    kept = [r for r in runs if all(r.fields.get(k) == v for k, v in filters.items())]
+    runs = as_fields(runs, [*(settings or []), *filters])  # a numeric setting, read as a metric, can be filtered on
+    kept = [r for r in runs if all(_matches(r.fields.get(k), v) for k, v in filters.items())]
     if runs and not kept:
         raise UsageError(f"no run matches the filters {filters}")
     if not kept:
@@ -68,9 +83,11 @@ def check(runs: list[Run], spec: Spec) -> None:
     """Every field and metric the spec names exists in the runs; else say which do."""
     fields = list(dict.fromkeys(k for r in runs for k in r.fields))
     metrics = list(dict.fromkeys(m for r in runs for m in r.metrics))
-    for name in [*spec.rows, *spec.columns, *([spec.seed] if spec.seed else [])]:
+    for name in [*spec.rows, *(spec.columns or []), *([spec.seed] if spec.seed else [])]:
         if name not in fields:
-            raise UsageError(f"no field {name!r} in the runs; their fields: {', '.join(fields) or 'none'}")
+            raise UsageError(
+                f"no field {name!r} in the runs; their fields: {', '.join(fields) or 'none'}; their metrics: {', '.join(metrics) or 'none'}"
+            )
     for m in spec.metrics:
         if m not in metrics:
             raise UsageError(f"no metric {m!r} in the runs; their metrics: {', '.join(metrics) or 'none'}")
@@ -79,6 +96,15 @@ def check(runs: list[Run], spec: Spec) -> None:
     for m, way in spec.better.items():
         if way not in ("higher", "lower"):
             raise UsageError(f"--better {m}= takes higher or lower, not {way!r}")
+    if spec.test not in TESTS:
+        raise UsageError(f"--test is {', '.join(TESTS)}, not {spec.test!r}")
+    if spec.correction not in ("holm", "bh", "none"):
+        raise UsageError(f"--correction is holm, bh or none, not {spec.correction!r}")
+    if not (isinstance(spec.alpha, (int, float)) and 0 < spec.alpha < 1):
+        raise UsageError(f"--alpha is a probability between 0 and 1 (0.05, not 5), not {spec.alpha!r}")
+    for m, d in spec.decimals.items():
+        if not (isinstance(d, int) and 0 <= d <= 12):
+            raise UsageError(f"--decimals {m}= takes a whole number from 0 to 12, not {d!r}")
 
 
 def to_json(t: Table) -> dict[str, Any]:
@@ -107,7 +133,20 @@ def to_json(t: Table) -> dict[str, Any]:
         "columns": columns,
         "rows": rows,
         "comparisons": [asdict(c) | {"significant": c.significant} for c in t.comparisons],
+        "notes": t.notes,
     }
+
+
+def _finite(data: Any) -> Any:
+    """The data with infinities and NaN as null: strict JSON has neither (an effect size is infinite when neither
+    side has any spread)."""
+    if isinstance(data, float):
+        return data if math.isfinite(data) else None
+    if isinstance(data, dict):
+        return {k: _finite(v) for k, v in data.items()}
+    if isinstance(data, (list, tuple)):
+        return [_finite(v) for v in data]
+    return data
 
 
 def save_config(path: Path, inputs: list[Path], filters: dict[str, str], spec: Spec, fmt: str) -> None:
@@ -152,11 +191,16 @@ def _check(path: Path, text: str) -> int:
     """The table made now against the one in `path`: 0 when they are the same (line endings and trailing spaces aside),
     1 with the lines that differ."""
     try:
-        committed = path.read_text(encoding="utf-8-sig")
+        raw = path.read_bytes()
+        committed = raw.decode("utf-16") if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else raw.decode("utf-8-sig")
     except OSError as e:
         print(f"exp-tables: {path}: {e.strerror or e}", file=sys.stderr)
         return 2
-    norm = lambda t: [line.rstrip() for line in t.strip().splitlines()]  # noqa: E731
+    except UnicodeDecodeError:
+        print(f"exp-tables: {path}: not UTF-8 or UTF-16 text", file=sys.stderr)
+        return 2
+    version = re.compile(r'^\s*"tool_version": ".*",?$')  # JSON: another version of exp-tables is not a difference in the results
+    norm = lambda t: [line.rstrip() for line in t.strip().splitlines() if not version.match(line)]  # noqa: E731
     if norm(committed) == norm(text):
         print(f"exp-tables: {path} matches the results")
         return 0
@@ -201,7 +245,7 @@ def _main(argv: list[str] | None) -> int:
     ap.add_argument(
         "--spread", choices=["std", "sem", "ci", "none"], help="after the mean: standard deviation (default), standard error, 95%% CI, nothing"
     )
-    ap.add_argument("--test", choices=["auto", "welch", "paired", "wilcoxon", "bootstrap", "none"],
+    ap.add_argument("--test", choices=TESTS,
                     help="significance test against each column's best (default auto: paired t when the seeds pair up, else Welch's)")  # fmt: skip
     ap.add_argument("--alpha", type=float, help="significance level (default 0.05)")
     ap.add_argument("--correction", choices=["holm", "bh", "none"], help="for a column's comparisons together (default holm)")
@@ -241,8 +285,8 @@ def _main(argv: list[str] | None) -> int:
             except ValueError as e:
                 raise UsageError("--decimals takes METRIC=N with N a whole number") from e
         fmt = args.format or config.get("format", "latex")
-        runs = load_runs([Path(p) for p in inputs], filters)
         spec = Spec(**{k: v for k, v in given.items() if k in SPEC_KEYS})
+        runs = load_runs([Path(p) for p in inputs], filters, [*spec.rows, *(spec.columns or []), spec.seed])
         check(runs, spec)
         spec = resolve(runs, spec)
         table = build(runs, spec)
@@ -252,8 +296,10 @@ def _main(argv: list[str] | None) -> int:
         print(f"exp-tables: {e}", file=sys.stderr)
         return 2
 
+    for note in table.notes:
+        print(f"exp-tables: note: {note}", file=sys.stderr)
     out = {"latex": latex, "markdown": render.markdown, "html": render.html}.get(fmt)
-    text = out(table) if out else json.dumps(to_json(table), indent=2, ensure_ascii=False) + "\n"
+    text = out(table) if out else json.dumps(_finite(to_json(table)), indent=2, ensure_ascii=False, allow_nan=False) + "\n"
     if args.check:
         return _check(args.check, text)
     _write(args.output, text)

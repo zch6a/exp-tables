@@ -84,8 +84,8 @@ exp-tables --config table.json --check paper/table.tex  # does the paper's table
 
 | option | |
 |---|---|
-| `--rows`, `--columns`, `--metrics`, `--seed` | the layout, when the guess is wrong (rows: method, model, …; column groups: another field that varies; the seed field by its name; every metric) |
-| `--filter FIELD=VALUE` | keep only some runs (repeatable) |
+| `--rows`, `--columns`, `--metrics`, `--seed` | the layout, when the guess is wrong (rows: method, model, …; column groups: another field that varies within a row; the seed field by its name or values like `seed 42`; every metric). `--columns ""` for no groups; a number read as a metric (a data ratio) can be named here and becomes part of what a run is |
+| `--filter FIELD=VALUE` | keep only some runs (repeatable; numbers compare as numbers: `ratio=0.10` keeps 0.1) |
 | `--better METRIC=higher\|lower` | which way is better, when the name does not say (accuracy, BLEU, F1 up; loss, error, FID, ECE, perplexity down) |
 | `--label NAME=TEXT`, `--decimals METRIC=N` | how the table prints names and numbers (default decimals: two significant digits of the spread) |
 | `--spread std\|sem\|ci\|none` | after the mean: standard deviation (default), standard error, 95% t interval, nothing |
@@ -100,17 +100,19 @@ It exits with 0 when the table is made, 1 when `--check` finds a difference, 2 w
 
 | | |
 |---|---|
-| **CSV, TSV** | one run per row; a column is a metric when all its values are numbers (`93.1%`, `1,234`, `1e-3` too), unless its name is a seed's (seed, trial, fold, …), a configuration's (under `config/`, `params/`, `args/`) or bookkeeping (runtime, timestamps); `--metrics` picks the ones to show. wandb's "Export runs" CSV is one |
-| **JSON, JSON Lines** | a list of runs, `{"runs": [...]}`, or runs by name; nested objects flattened (`config/lr`) |
+| **CSV, TSV** | one run per row; a column is a metric when all its values are numbers (`93.1%`, `1,234`, `1e-3` too) or missing (empty, `nan`, `n/a`, `-`), unless its name is a seed's (seed, trial, fold, …), a configuration's (under `config/`, `params/`, `args/`, or a hyperparameter's: `lr`, `batch_size`, `weight_decay`, …) or bookkeeping (runtime, timestamps, state); `--metrics` picks the ones to show. A data frame's index column is left out. wandb's "Export runs" CSV is one |
+| **JSON, JSON Lines** | a list of runs, `{"runs": [...]}`, or runs by name; nested objects flattened (`config/lr`); `NaN` and infinities as missing |
 | **TensorBoard** | a folder of runs: each folder with `events.out.tfevents.*` is a run, its path giving its fields (`ours/lr=0.1/seed_2`: method `ours`, `lr` 0.1, seed 2); each tag's value at its last step. Its own reader: no TensorFlow |
-| **MLflow** | an `mlruns` folder: parameters and tags as fields, each metric's last value |
+| **MLflow** | an `mlruns` folder: parameters and tags as fields (MLflow's own `mlflow.*` tags left out), each metric's last value; deleted runs left out |
 
 ## The statistics
 
 Mean and sample standard deviation over seeds; the 95% interval from Student's t. Each column with a direction:
 its best against every other method with two or more seeds — the paired t test when both have the same seeds,
-Welch's otherwise (or the Wilcoxon signed-rank test, exact up to 25 pairs, or a seeded bootstrap) — with the
-column's p values corrected together (Holm by default). Effect sizes: Hedges' g and Cliff's delta. "Seeds needed":
+Welch's otherwise (or the Wilcoxon signed-rank test, exact up to 25 pairs, ties included, or a seeded bootstrap) —
+with the column's p values corrected together (Holm by default). The tests decide the bold: a row is bold when it
+is not significantly worse than the best, even if it prints the same number; without a test (one seed), the best
+as printed. Effect sizes: Hedges' g and Cliff's delta. "Seeds needed":
 the smallest n for which a difference of the size seen would be found with power 0.8, by the t distribution at n's
 own degrees of freedom (paired seeds by the spread of their differences).
 
@@ -144,7 +146,11 @@ The job summary shows the lines that differ, the table, and what its marks rest 
 - It tests what the seeds show. Two seeds a method can rarely show anything; one seed shows nothing (no spread, no
   test), and the table then marks only the highest mean.
 - The tests compare each method with the best of its column, not every pair.
-- Files are read into memory.
+- It says so (on stderr, and in the JSON) when the runs look wrong for the table: several runs in one cell with the
+  same seed (another setting, often a number read as a metric, tells them apart), or a Wilcoxon test with too
+  few pairs to ever be significant.
+- Files are read into memory. A table of 100,000 runs takes a few seconds, but `--test bootstrap` is pure Python and
+  slow with hundreds of seeds (about 0.2 s a comparison at 500 seeds).
 
 ## Also in this toolkit
 

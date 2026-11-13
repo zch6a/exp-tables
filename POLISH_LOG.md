@@ -134,3 +134,66 @@ then v0.1.0.
   with `matches=false`).
 
 Next: polishing round 1.
+
+### 2026-11-13 — polishing round 1
+
+**Real data.** Ten public multi-seed results CSVs from GitHub repositories (found by code search; fetched to a
+temporary folder, never committed; layouts kept as synthetic tests in `tests/test_real_shapes.py`). What they showed:
+
+- A second name of the method (`model_key` beside `model`) was taken as the column groups: a diagonal table with
+  every cell bold. Column groups must now vary within a row; the chest X-ray results came out by data budget
+  (10%, 20%, 100%) as they should.
+- A table of one row bolded everything. A column needs two rows to have a best.
+- `AUPRC`, `specificity`, `mcc`, `cost_efficiency`, `failure_rate` had no direction or the wrong one. More names,
+  and when a name has words of both kinds the last decides (`cost efficiency` up; `cost per success` down; a
+  generic `score` or `top-1` gives way: `brier score`, `top-1 error` down).
+- Runs at several data ratios with the same seed were averaged as seeds, silently. Now a note says so and names the
+  likely setting (a number read as a metric); such a number can be named in `--rows`, `--columns`, `--filter`.
+- Hyperparameter columns of a wandb export (`lr`, `batch_size`) were shown as metrics; now they are fields.
+- Decimals: a spread of 0.01 computed as 0.00999… gave a digit too many; a constant column (0.1 three times) had a
+  spread of 1e-17 and four decimals; one very steady row stretched its whole column. Now: exactly 0 for equal values,
+  the median spread, and up to 10 decimals so that 1e-5 is not 0.0000.
+
+**Independent review** (a separate agent read every module and ran inputs against it; 13 confirmed defects, all
+fixed, each with a regression test in `tests/test_review_round1.py`):
+
+1. One run per method (no seeds) became one unnamed row averaging the methods: a field naming every run apart is
+   now the method when there are no seeds, a run id only when there are; seed fields are also found by their values
+   (`seed 42`, `s1`).
+2. One `NaN` (JSON allows it) pinned every corrected p of its column to 1, so every row was bold; non-finite values
+   are missing now.
+3. `direction()` matched "lower" inside `flowers102` and `elbo_lower_bound`: only explicit markers count now
+   ("lower is better", "(lower)", ↓), and the dataset after the metric (`acc/flowers102`) no longer hides it.
+4. Metrics around 1e-5 printed as `0.0000`, all bold.
+5. One `nan`/`n/a`/`-` in a column made it text, and text can become column groups; these are missing values now.
+6. No metric at all gave exit 0 and broken LaTeX; now exit 2 with "no metric to show".
+7. A pandas index column (empty header) was a metric; it is left out.
+8. Rows equal as printed but significantly worse were bold, against the legend. The tests decide now.
+9. `--format json` wrote `Infinity`; now `null`, with `allow_nan=False` as a guarantee.
+10. A single-seed `NaN` crashed the decimals.
+11. MLflow ignored tags (the README promised them) and read deleted runs.
+12. `--filter` could not reach a number read as a metric, though the new note suggested it; numbers compare as
+    numbers (`0.10` is `0.1`).
+13. `--columns ""` could not turn groups off (it means none now; `Spec.columns=None` means worked out); `--test`,
+    `--correction`, `--alpha` (0 < α < 1), `--decimals` (0–12) are checked, also from a config; the legend says
+    "uncorrected" with `--correction none`.
+
+Also from the review's "plausible" list: Markdown labels escape `\`, backticks, brackets and HTML; `--check` reads
+UTF-16 (PowerShell 5's `>`), says so on other encodings (exit 2), and ignores `tool_version` in JSON; the Action
+writes `matches` before the summary, puts stderr in the summary and makes the summary best-effort; Wilcoxon is now
+exact with ties too (doubled average ranks; differences compared at 12 significant digits, so 90.1 − 80.1 and
+90.2 − 80.2 tie) and notes when its pairs are too few to reach α; a paired test that falls back to Welch's says so.
+
+**Speed.** 100,000 runs (20 methods × 10 datasets × 500 seeds × 3 metrics) took 133 s, nearly all in the power
+calculation's t quantiles: the quantile is now cached, bracketed by doubling, and the normal one past 10⁶ degrees of
+freedom; Cliff's delta sorts instead of comparing every pair. Now 3.4 s (Wilcoxon 2.8 s). The bootstrap stops early
+once P is four standard errors from α; it is still the slow test (124 s on this extreme file), as the README says.
+
+**The rest of the round.** `--help`, errors and exit statuses read again; the legend only states marks the table
+has ("one run per cell: no spread" when there is none; "untested" when the best is marked without a test). SECURITY:
+no network, no dependencies, nothing to audit beyond the standard library. README (both languages) and CHANGELOG
+updated with what changed.
+
+Tests: 78 (were 55), Python 3.10 and 3.13; ruff, mypy clean.
+
+Next: round 2.

@@ -80,8 +80,8 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 
 | 选项 | |
 |---|---|
-| `--rows`、`--columns`、`--metrics`、`--seed` | 推断不对时指定表结构（行：method、model 等；列组：另一个取值变化的字段；种子字段按名字识别；默认全部指标） |
-| `--filter FIELD=VALUE` | 只保留部分运行（可重复） |
+| `--rows`、`--columns`、`--metrics`、`--seed` | 推断不对时指定表结构（行：method、model 等；列组：在同一行内取值变化的另一个字段；种子字段按名字或 `seed 42` 这样的取值识别；默认全部指标）。`--columns ""` 表示不分组；被读成指标的数字（例如数据比例）也可以写在这里，它就成为运行本身的属性 |
+| `--filter FIELD=VALUE` | 只保留部分运行（可重复；数字按数值比较：`ratio=0.10` 保留 0.1） |
 | `--better METRIC=higher\|lower` | 名字看不出方向时指定（accuracy、BLEU、F1 越高越好；loss、error、FID、ECE、perplexity 越低越好） |
 | `--label NAME=TEXT`、`--decimals METRIC=N` | 名称和数字的显示方式（默认小数位：波动的两位有效数字） |
 | `--spread std\|sem\|ci\|none` | 均值后面显示：标准差（默认）、标准误、95% t 区间、不显示 |
@@ -96,16 +96,16 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 
 | | |
 |---|---|
-| **CSV、TSV** | 每行一次运行；某列的值全是数字（也认 `93.1%`、`1,234`、`1e-3`）就是指标，除非它的名字是种子（seed、trial、fold 等）、配置（位于 `config/`、`params/`、`args/` 下）或记录信息（运行时长、时间戳）；`--metrics` 选择要显示的指标。wandb 的 "Export runs" CSV 也是这种格式 |
-| **JSON、JSON Lines** | 运行的列表、`{"runs": [...]}`，或按名字组织的运行；嵌套对象会展开（`config/lr`） |
+| **CSV、TSV** | 每行一次运行；某列的值全是数字（也认 `93.1%`、`1,234`、`1e-3`）或缺失（空、`nan`、`n/a`、`-`）就是指标，除非它的名字是种子（seed、trial、fold 等）、配置（位于 `config/`、`params/`、`args/` 下，或是超参数名：`lr`、`batch_size`、`weight_decay` 等）或记录信息（运行时长、时间戳、状态）；`--metrics` 选择要显示的指标。数据框的索引列会被忽略。wandb 的 "Export runs" CSV 也是这种格式 |
+| **JSON、JSON Lines** | 运行的列表、`{"runs": [...]}`，或按名字组织的运行；嵌套对象会展开（`config/lr`）；`NaN` 和无穷大视为缺失 |
 | **TensorBoard** | 一个包含多次运行的目录：每个含 `events.out.tfevents.*` 的子目录是一次运行，路径给出它的字段（`ours/lr=0.1/seed_2`：method 为 `ours`、`lr` 为 0.1、seed 为 2）；每个 tag 取最后一步的值。自带解析器，不需要 TensorFlow |
-| **MLflow** | `mlruns` 目录：参数和标签作为字段，每个指标取最后的值 |
+| **MLflow** | `mlruns` 目录：参数和标签作为字段（MLflow 自己的 `mlflow.*` 标签除外），每个指标取最后的值；已删除的运行不读 |
 
 ## 统计方法
 
 跨种子的均值与样本标准差；95% 区间来自 Student t 分布。每个有方向的列：其最佳方法与每个至少有两个种子的其他方法比较——
-两者种子相同时用配对 t 检验，否则用 Welch 检验（也可选 Wilcoxon 符号秩检验，25 对以内精确计算，或固定随机种子的 bootstrap）——
-同一列的 p 值一起校正（默认 Holm）。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
+两者种子相同时用配对 t 检验，否则用 Welch 检验（也可选 Wilcoxon 符号秩检验，25 对以内精确计算、含并列，或固定随机种子的 bootstrap）——
+同一列的 p 值一起校正（默认 Holm）。加粗由检验决定：没有显著差于最佳的行加粗，即使印出来的数字相同也一样；无法检验时（只有一个种子）按印出的数字标最佳。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
 按 n 自身的自由度用 t 分布计算（配对种子按差值的波动）。
 
 全部用标准库实现，并对照独立数值核对（t 分位数对照公开的表，非整数自由度的 t 分布对照数值积分，Wilcoxon 精确 p 值手算核对）。
@@ -135,7 +135,8 @@ job summary 里会列出不同的行、表格本身，以及其中标记的依�
 
 - 它检验的是种子所显示的东西。每个方法两个种子很少能说明什么；一个种子什么也说明不了（没有波动、没法检验），这时表里只标出均值最高的。
 - 检验是每个方法和该列最佳比较，不是两两全部比较。
-- 文件会整个读入内存。
+- 运行记录看起来不适合这张表时会提示（stderr 和 JSON 里）：同一格里有多个运行用了同一个种子（通常是另一个设置把它们区分开，常常是被读成指标的数字），或 Wilcoxon 检验的配对数太少，永远不可能显著。
+- 文件会整个读入内存。十万次运行的表几秒就能生成，但 `--test bootstrap` 是纯 Python 实现，种子数上百时较慢（500 个种子约每次比较 0.2 秒）。
 
 ## 同一套工具
 

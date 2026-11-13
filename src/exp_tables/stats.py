@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import lru_cache
+from statistics import NormalDist
 
 
 def _betacf(a: float, b: float, x: float) -> float:
@@ -62,14 +64,26 @@ def t_cdf(t: float, df: float) -> float:
     return 1.0 - tail if t > 0 else tail
 
 
+@lru_cache(maxsize=4096)
 def t_ppf(p: float, df: float) -> float:
-    """The t such that P(T <= t) = p (bisection on t_cdf).
+    """The t such that P(T <= t) = p: bisection on t_cdf, in a bracket that doubles until it holds the answer; the
+    normal quantile past a million degrees of freedom. Cached: power calculations ask for the same few again and again.
 
     >>> round(t_ppf(0.975, 10), 3), round(t_ppf(0.975, 1), 3), round(t_ppf(0.975, 1e9), 3)
     (2.228, 12.706, 1.96)
+    >>> round(t_ppf(0.9995, 1), 1)  # beyond the old bracket's reach in spirit: 636.6
+    636.6
     """
-    lo, hi = -1e4, 1e4
-    for _ in range(200):
+    if df > 1e6:
+        return NormalDist().inv_cdf(p)
+    if p == 0.5:
+        return 0.0
+    if p < 0.5:
+        return -t_ppf(1 - p, df)
+    lo, hi = 0.0, 2.0
+    while t_cdf(hi, df) < p and hi < 1e12:
+        lo, hi = hi, hi * 2
+    while hi - lo > 1e-12 * max(1.0, hi):
         mid = (lo + hi) / 2
         if t_cdf(mid, df) < p:
             lo = mid
@@ -90,12 +104,18 @@ class Summary:
 
     @property
     def mean(self) -> float:
-        return sum(self.values) / self.n
+        if self.values and min(self.values) == max(self.values):
+            return self.values[0]  # exactly, not 0.1 + 0.1 + 0.1 over 3
+        return math.fsum(self.values) / self.n
 
     @property
     def std(self) -> float:
-        """The sample standard deviation (n - 1); 0 for a single value."""
-        if self.n < 2:
+        """The sample standard deviation (n - 1); 0 for a single value, and exactly 0 for equal values.
+
+        >>> Summary([0.1, 0.1, 0.1]).std
+        0.0
+        """
+        if self.n < 2 or min(self.values) == max(self.values):
             return 0.0
         m = self.mean
         return math.sqrt(sum((v - m) ** 2 for v in self.values) / (self.n - 1))
