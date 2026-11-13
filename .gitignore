@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+# papers fetched for measurements are the authors' work: never committed
+*.pdf
+!tests/fixtures/*.pdf
+arxiv_src/
