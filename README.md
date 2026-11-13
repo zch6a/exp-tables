@@ -179,6 +179,12 @@ The job summary shows the lines that differ, the table, and what its marks rest 
 tables; [submit-check](https://github.com/zch6a/submit-check) checks it against a venue's rules;
 [arxiv-diff](https://github.com/zch6a/arxiv-diff) shows what changed between two versions.
 
+## Part of research-kit
+
+One of thirteen open research tools, from reading papers to after publication. All of them, in the order of
+the work, with one Claude Code plugin marketplace for their skills: [research-kit](https://github.com/zch6a/research-kit)
+· [site](https://zch6a.github.io/research-kit/).
+
 ## License
 
 MIT

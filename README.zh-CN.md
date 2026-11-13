@@ -158,6 +158,10 @@ job summary 里会列出不同的行，并附上表格本身和其中标记的�
 [paper-proof](https://github.com/zch6a/paper-proof) 检查论文的参考文献以及正文数字与自身表格是否一致；[submit-check](https://github.com/zch6a/submit-check) 按会议规则检查论文；
 [arxiv-diff](https://github.com/zch6a/arxiv-diff) 显示两个版本之间改了什么。
 
+## 属于 research-kit
+
+这是 13 个开源科研工具之一，覆盖从读论文到论文发表之后。全部工具按科研流程的介绍，以及安装它们技能的 Claude Code 插件市场，见 [research-kit](https://github.com/zch6a/research-kit) · [网站](https://zch6a.github.io/research-kit/)。
+
 ## 许可证
 
 MIT

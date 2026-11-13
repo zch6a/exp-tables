@@ -373,3 +373,7 @@ independent reviews; 55 tests at the first commit, 108 at the release.
 - 4 places: a pair of decorative dashes in the statistics paragraph made plain sentences, two semicolons joining independent sentences split into full stops (intro and the hand-made-tables paragraph), a 3-item 顿号 list in a sentence reworded (the job summary line).
 - The checks follow the findings of lieflat-less-ai-tone (shiujan, CC BY-NC 4.0); its findings applied, its text not copied.
 - Left as they are: 加粗的意思是…不是“接近” (a real, demonstrated misreading), the supported-format enumeration, colon-led lists, table cells, the code blocks the README test reads.
+### 2026-11-14 — a link to research-kit
+
+Both READMEs now end (before the licence) with a short section pointing to research-kit, the toolkit's front door: all
+thirteen tools in the order of the work, and one Claude Code plugin marketplace for their skills. Documentation only.
