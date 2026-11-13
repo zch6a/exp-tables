@@ -23,6 +23,12 @@ def comparison_line(c: Comparison, decimals: int = 2) -> str:
     True
     """
     where = f"{c.group} · {c.metric}" if c.group else c.metric
+    if c.errors is not None:  # two single results, by their standard errors
+        head = (
+            f"{where}: {c.best} vs {c.other} {c.difference:+.{decimals}f} ({c.test}, {_p(c.p)}, corrected {_p(c.p_adjusted)}; "
+            f"standard errors {c.errors[0]:.{decimals}f} and {c.errors[1]:.{decimals}f})"
+        )
+        return f"{head}: {'significant' if c.significant else 'within the noise'}"
     head = (
         f"{where}: {c.best} vs {c.other} {c.difference:+.{decimals}f} ({c.test}, {_p(c.p)}, corrected {_p(c.p_adjusted)}; "
         f"Hedges g {c.hedges_g:.2f}, Cliff delta {c.cliffs_delta:.2f}, {c.seeds[0]} and {c.seeds[1]} seeds)"

@@ -37,6 +37,7 @@ class Run:
     fields: dict[str, str] = field(default_factory=dict)  # what the run is: method, dataset, seed, configuration
     metrics: dict[str, float] = field(default_factory=dict)  # what it measured
     source: str = ""  # where it was read: file and line, or a run's folder
+    errors: dict[str, float] = field(default_factory=dict)  # a metric's standard error, when the run reports one (acc_stderr)
 
 
 def number(text: str) -> float | None:
@@ -144,12 +145,12 @@ def _is_lm_eval(data: object) -> bool:
 def read_lm_eval(data: dict[str, object], name: str = "") -> list[Run]:
     """Runs from an lm-evaluation-harness results file: one run per task, with the fields "model" and "task" (and
     "seed" when the harness recorded one); each metric under its name ("acc", "exact_match"; with its filter when it
-    is not "none": "exact_match (strict-match)"). The standard errors (``acc_stderr``) are left out.
+    is not "none": "exact_match (strict-match)"); its standard error (``acc_stderr``) as the metric's error.
 
     >>> runs = read_lm_eval({"results": {"arc": {"acc,none": 0.5, "acc_stderr,none": 0.01, "alias": "arc"}},
     ...                      "versions": {}, "model_name": "m"})
-    >>> runs[0].fields, runs[0].metrics
-    ({'model': 'm', 'task': 'arc'}, {'acc': 0.5})
+    >>> runs[0].fields, runs[0].metrics, runs[0].errors
+    ({'model': 'm', 'task': 'arc'}, {'acc': 0.5}, {'acc': 0.01})
     """
     config = data.get("config") if isinstance(data.get("config"), dict) else {}
     assert isinstance(config, dict)
@@ -168,10 +169,13 @@ def read_lm_eval(data: dict[str, object], name: str = "") -> list[Run]:
             run.fields["seed"] = str(seed)
         for key, value in values.items():
             metric, _, how = str(key).partition(",")
-            if metric.endswith("_stderr") or metric == "alias" or isinstance(value, bool) or not isinstance(value, (int, float)):
+            if metric == "alias" or isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
                 continue
-            if math.isfinite(value):
-                run.metrics[metric if how in ("", "none") else f"{metric} ({how})"] = float(value)
+            error = metric.endswith("_stderr")
+            metric = metric.removesuffix("_stderr")
+            name = metric if how in ("", "none") else f"{metric} ({how})"
+            (run.errors if error else run.metrics)[name] = float(value)
+        run.errors = {k: v for k, v in run.errors.items() if k in run.metrics}
         if run.metrics:
             runs.append(run)
     return runs

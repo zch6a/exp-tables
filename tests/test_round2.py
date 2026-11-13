@@ -65,7 +65,9 @@ def test_lm_evaluation_harness_results(tmp_path: Path, capsys: pytest.CaptureFix
     assert main([str(a), str(b), "--format", "markdown", "--filter", "task=arc,mmlu", "--metrics", "acc"]) == 0
     out = capsys.readouterr()
     assert out.out.splitlines()[0] == "| model | acc ↑ |"
-    assert "| org/model-13b | **0.58** |" in out.out and "untested" in out.out and "note" not in out.err
+    # the harness's standard errors (0.01 each) test the two single results: z = 0.05 / 0.0141 = 3.5
+    assert "| org/model-13b | **0.580** ± 0.010 |" in out.out and "| org/model-7b | 0.530 ± 0.010 |" in out.out
+    assert "z (standard errors)" in out.out and "note" not in out.err
 
 
 def test_columns_none(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -104,7 +104,7 @@ def to_json(t: Table) -> dict[str, Any]:
                 continue
             s = c.summary
             cells.append({"values": s.values, "seeds": c.seeds, "n": s.n, "mean": s.mean, "std": s.std, "sem": s.sem, "ci95": s.ci(),
-                          "best": c.best, "second": c.second, "tied": c.tied})  # fmt: skip
+                          "error": c.error, "best": c.best, "second": c.second, "tied": c.tied})  # fmt: skip
         rows.append({"row": name, "cells": cells})
     return {
         "tool": "exp-tables",
@@ -158,12 +158,12 @@ def read_config(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        raise UsageError(f"{path}: not a readable config ({e})") from e
+        raise UsageError(f"{path.as_posix()}: not a readable config ({getattr(e, 'strerror', None) or e})") from e
     if not isinstance(data, dict) or not isinstance(data.get("spec", {}), dict):
-        raise UsageError(f"{path}: not an exp-tables config")
+        raise UsageError(f"{path.as_posix()}: not an exp-tables config")
     unknown = set(data.get("spec", {})) - set(SPEC_KEYS)
     if unknown:
-        raise UsageError(f"{path}: unknown spec keys {sorted(unknown)}")
+        raise UsageError(f"{path.as_posix()}: unknown spec keys {sorted(unknown)}")
     base = path.resolve().parent
     data["inputs"] = [base / p for p in data.get("inputs", [])]
     return data
@@ -176,18 +176,18 @@ def _check(path: Path, text: str) -> int:
         raw = path.read_bytes()
         committed = raw.decode("utf-16") if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else raw.decode("utf-8-sig")
     except OSError as e:
-        print(f"exp-tables: {path}: {e.strerror or e}", file=sys.stderr)
+        print(f"exp-tables: {path.as_posix()}: {e.strerror or e}", file=sys.stderr)
         return 2
     except UnicodeDecodeError:
-        print(f"exp-tables: {path}: not UTF-8 or UTF-16 text", file=sys.stderr)
+        print(f"exp-tables: {path.as_posix()}: not UTF-8 or UTF-16 text", file=sys.stderr)
         return 2
     version = re.compile(r'^\s*"tool_version": ".*",?$')  # JSON: another version of exp-tables is not a difference in the results
     norm = lambda t: [line.rstrip() for line in t.strip().splitlines() if not version.match(line)]  # noqa: E731
     if norm(committed) == norm(text):
-        print(f"exp-tables: {path} matches the results")
+        print(f"exp-tables: {path.as_posix()} matches the results")
         return 0
-    diff = difflib.unified_diff(norm(committed), norm(text), f"{path} (in the paper)", "made from the results", lineterm="")
-    print(f"exp-tables: {path} does not match the results:", *diff, sep="\n")
+    diff = difflib.unified_diff(norm(committed), norm(text), f"{path.as_posix()} (in the paper)", "made from the results", lineterm="")
+    print(f"exp-tables: {path.as_posix()} does not match the results:", *diff, sep="\n")
     return 1
 
 
@@ -272,8 +272,9 @@ def _main(argv: list[str] | None) -> int:
         check(runs, spec)
         spec = resolve(runs, spec)
         table = build(runs, spec)
-    except UsageError as e:
-        ap.error(str(e))
+    except UsageError as e:  # what the runs or the config lack: the message, not the whole usage
+        print(f"exp-tables: error: {e} (exp-tables --help lists the options)", file=sys.stderr)
+        return 2
     except (ValueError, OSError) as e:
         print(f"exp-tables: {e}", file=sys.stderr)
         return 2

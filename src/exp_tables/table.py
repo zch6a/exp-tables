@@ -10,7 +10,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from .data import SEED, Run
-from .significance import Result, benjamini_hochberg, bootstrap, cliffs_delta, hedges_g, holm, paired, seeds_needed, welch, wilcoxon
+from .significance import Result, benjamini_hochberg, bootstrap, cliffs_delta, hedges_g, holm, paired, seeds_needed, welch, wilcoxon, ztest
 from .stats import Summary
 
 LOWER = re.compile(
@@ -93,6 +93,12 @@ class Cell:
     second: bool = False
     seeds: list[str] = field(default_factory=list)  # each value's seed, in order
     tied: bool = False  # marked best because it is not significantly different from the best
+    error: float | None = None  # a single result's standard error, as its evaluation reported it
+
+    @property
+    def testable(self) -> bool:
+        """Two or more seeds, or one result with its standard error."""
+        return self.summary is not None and (self.summary.n >= 2 or (self.summary.n == 1 and self.error is not None))
 
 
 @dataclass
@@ -112,6 +118,7 @@ class Comparison:
     seeds: tuple[int, int]
     seeds_needed: int | None  # per method, for a difference of this size to be found (power 0.8)
     alpha: float = 0.05
+    errors: tuple[float, float] | None = None  # the standard errors, for a z test of single results
 
     @property
     def significant(self) -> bool:
@@ -152,6 +159,31 @@ def _setting(value: float) -> str:
     return str(int(value)) if value.is_integer() else repr(value)
 
 
+ERROR_NAME = re.compile(r"^(?P<base>.+?)[_ ](?:stderr|std_?err|se|sem|standard[_ ]error)(?P<rest> \(.+\))?$", re.I)
+
+
+def with_errors(runs: list[Run]) -> list[Run]:
+    """The runs with a metric's standard error, reported as a metric of its own (``acc_stderr``, ``acc_se``, ``acc
+    (strict) stderr``), made that metric's error.
+
+    >>> with_errors([Run({}, {"acc": 0.5, "acc_stderr": 0.01, "loss": 1.0})])[0].errors
+    {'acc': 0.01}
+    """
+    out = []
+    for r in runs:
+        errors = dict(r.errors)
+        for m, v in r.metrics.items():
+            found = ERROR_NAME.match(m)
+            if found and (base := found["base"] + (found["rest"] or "")) in r.metrics and m != base:
+                errors[base] = v
+        if errors == r.errors:
+            out.append(r)
+            continue
+        names = {m for m in r.metrics if (f := ERROR_NAME.match(m)) and f["base"] + (f["rest"] or "") in errors}
+        out.append(Run(dict(r.fields), {k: v for k, v in r.metrics.items() if k not in names}, r.source, errors))
+    return out
+
+
 def as_fields(runs: list[Run], names: list[str]) -> list[Run]:
     """The runs with these metrics made fields: a numeric setting (a learning rate, a data ratio) is read as a metric,
     and naming it as rows, columns or the seed says it is part of what the run is.
@@ -165,7 +197,7 @@ def as_fields(runs: list[Run], names: list[str]) -> list[Run]:
     out = []
     for r in runs:
         moved = {n: _setting(r.metrics[n]) for n in names if n in r.metrics}
-        out.append(Run({**r.fields, **moved}, {k: v for k, v in r.metrics.items() if k not in moved}, r.source))
+        out.append(Run({**r.fields, **moved}, {k: v for k, v in r.metrics.items() if k not in moved}, r.source, r.errors))
     return out
 
 
@@ -226,7 +258,7 @@ def check(runs: list[Run], spec: Spec) -> None:
             raise ValueError(f"decimals {m}= takes a whole number from 0 to 12, not {d!r}")
 
 
-def _auto_decimals(summaries: list[Summary]) -> int:
+def _auto_decimals(summaries: list[Summary], errors: list[float] | None = None) -> int:
     """Two significant digits of the column's typical (median) spread, so that one very steady row does not stretch
     every number of its column; with no spread (one seed each, or equal values), the decimals the values
     have, up to four significant digits. At most 10, so that 1e-5 is not printed as 0.0000.
@@ -235,6 +267,7 @@ def _auto_decimals(summaries: list[Summary]) -> int:
     (8, 2)
     """
     spreads = [s.std for s in summaries if s.n > 1 and math.isfinite(s.std) and s.std > 1e-9 * abs(s.mean)]  # not float noise
+    spreads += [e for e in errors or [] if math.isfinite(e) and e > 0]  # single results' standard errors
     if spreads:
         typical = sorted(spreads)[(len(spreads) - 1) // 2]
         return max(0, min(10, 1 - math.floor(math.log10(typical) + 1e-9)))  # 0.01 computed as 0.00999… is still 0.01
@@ -248,7 +281,7 @@ def _auto_decimals(summaries: list[Summary]) -> int:
 def build(runs: list[Run], spec: Spec | None = None) -> Table:
     """The table of `runs` as `spec` asks (worked out where it does not say)."""
     spec = spec or Spec()
-    runs = as_fields(runs, [*spec.rows, *(spec.columns or []), spec.seed])
+    runs = with_errors(as_fields(runs, [*spec.rows, *(spec.columns or []), spec.seed]))
     check(runs, spec)
     spec = resolve(runs, spec)
     key = lambda r, names: " / ".join(r.fields.get(n, "") for n in names)  # noqa: E731
@@ -256,23 +289,33 @@ def build(runs: list[Run], spec: Spec | None = None) -> Table:
     group_keys = list(dict.fromkeys(key(r, spec.columns) for r in runs)) if spec.columns else [""]
     values: dict[tuple[str, str, str], list[float]] = {}
     seeds: dict[tuple[str, str, str], list[str]] = {}
+    errors: dict[tuple[str, str, str], float] = {}
     for r in runs:
         for m in spec.metrics:
             if m in r.metrics:
                 k = (key(r, spec.rows), key(r, spec.columns) if spec.columns else "", m)
                 values.setdefault(k, []).append(r.metrics[m])
                 seeds.setdefault(k, []).append(r.fields.get(spec.seed, ""))
+                if m in r.errors:
+                    errors[k] = r.errors[m]
     columns = [(g, m) for g in group_keys for m in spec.metrics if any((rk, g, m) in values for rk in row_keys)]
     if not columns:
         raise ValueError("no metric to show: no column of the runs holds numbers (a metric's values must be numbers or missing)")
     cells = [
-        [Cell(Summary(values[(rk, g, m)]), seeds=seeds[(rk, g, m)]) if (rk, g, m) in values else Cell(None) for g, m in columns] for rk in row_keys
+        [
+            Cell(Summary(v), seeds=seeds[(rk, g, m)], error=errors.get((rk, g, m)) if len(v) == 1 else None)
+            if (v := values.get((rk, g, m)))
+            else Cell(None)
+            for g, m in columns
+        ]
+        for rk in row_keys
     ]
     directions = [spec.better.get(m) or direction(m) for _, m in columns]
     decimals = []
     for j, (_, m) in enumerate(columns):
         present = [c.summary for row in cells if (c := row[j]).summary is not None]
-        decimals.append(spec.decimals.get(m, _auto_decimals(present)))
+        reported = [c.error for row in cells if (c := row[j]).error is not None]
+        decimals.append(spec.decimals.get(m, _auto_decimals(present, reported)))
     for j, way in enumerate(directions):
         if way not in ("higher", "lower") or sum(row[j].summary is not None for row in cells) < 2:
             continue  # no direction, or nothing to compare with
@@ -343,9 +386,12 @@ def _needed(a: Cell, b: Cell, r: Result, level: float) -> int | None:
 
 
 def _test(spec_test: str, a: Cell, b: Cell, levels: list[float] | None = None) -> Result:
-    """The test of two cells' values: paired when asked, or (auto) when both have the same seeds."""
+    """The test of two cells' values: paired when asked, or (auto) when both have the same seeds; two single results
+    by their standard errors."""
     assert a.summary is not None and b.summary is not None
     x, y = a.summary.values, b.summary.values
+    if a.summary.n == 1 and b.summary.n == 1 and a.error is not None and b.error is not None:
+        return ztest(x[0], a.error, y[0], b.error)
     pairs = _pairs(a, b)
     if pairs:  # put b's values in a's seed order
         order = {s: v for s, v in zip(b.seeds, y, strict=True)}
@@ -390,7 +436,8 @@ def _unmark_untested(table: Table, leaders: dict[int, Cell], tested: set[int]) -
         leader.best = True
     if untested:
         table.notes.append(
-            f"{untested} cell(s) could not be tested against their column's best (one seed): they are not marked either way, whatever their value"
+            f"{untested} cell(s) could not be tested against their column's best (one seed, without a standard error; or single "
+            "results beside rows with seeds): they are not marked either way, whatever their value"
         )
 
 
@@ -408,11 +455,13 @@ def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
             continue
         sign = 1 if way == "higher" else -1
         # the best of the rows that can be tested (two or more seeds), so that one lucky seed does not leave the column untested
-        testable = [(name, c) for name, c in column if c.summary is not None and c.summary.n >= 2] or column
+        # (or, without seeds, single results with their standard errors: an evaluation's)
+        seeded = [(name, c) for name, c in column if c.summary is not None and c.summary.n >= 2]
+        testable = seeded or [(name, c) for name, c in column if c.testable] or column
         best_name, best = max(testable, key=lambda nc: sign * nc[1].summary.mean)  # type: ignore[union-attr]
         leaders[j] = best
-        others = [(name, c) for name, c in column if c is not best and c.summary is not None and c.summary.n >= 2]
-        if best.summary is None or best.summary.n < 2 or not others:
+        others = [(name, c) for name, c in testable if c is not best]
+        if not best.testable or not others:
             continue  # untested
         k = len(others)  # the levels the corrected p values are held to, for the bootstrap to stop early safely
         levels = (
@@ -426,7 +475,7 @@ def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
         ps = [r.p for r in results]
         adjusted = holm(ps) if spec.correction == "holm" else benjamini_hochberg(ps) if spec.correction == "bh" else ps
         for (name, c), r, p_adj in zip(others, results, adjusted, strict=True):
-            assert c.summary is not None
+            assert c.summary is not None and best.summary is not None
             tested.add(id(c))
             # the test decides, also against "equal as printed": bold says "not significantly worse"
             c.best, c.tied = p_adj >= spec.alpha, p_adj >= spec.alpha
@@ -445,8 +494,9 @@ def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
                     hedges_g(best.summary.values, c.summary.values),
                     cliffs_delta(best.summary.values, c.summary.values),
                     (best.summary.n, c.summary.n),
-                    None if c.best is False else _needed(best, c, r, level),
+                    None if c.best is False or r.name.startswith("z") else _needed(best, c, r, level),
                     spec.alpha,
+                    (best.error, c.error) if r.name.startswith("z") and best.error is not None and c.error is not None else None,
                 )  # fmt: skip
             )
     return leaders, tested
@@ -517,9 +567,10 @@ def latex_cell(c: Cell, decimals: int, spread: str) -> str:
         return "--"
     mean = f"{c.summary.mean:.{decimals}f}"
     mean = rf"\textbf{{{mean}}}" if c.best else rf"\underline{{{mean}}}" if c.second else mean
-    if spread == "none" or c.summary.n < 2:
+    if spread == "none" or (c.summary.n < 2 and c.error is None):
         return mean
-    return rf"{mean}\,{{\scriptsize$\pm${_spread(c.summary, spread):.{decimals}f}}}"
+    shown = c.error if c.summary.n < 2 and c.error is not None else _spread(c.summary, spread)
+    return rf"{mean}\,{{\scriptsize$\pm${shown:.{decimals}f}}}"
 
 
 def latex(t: Table) -> str:

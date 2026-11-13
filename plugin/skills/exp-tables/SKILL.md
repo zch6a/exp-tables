@@ -1,6 +1,6 @@
 ---
 name: exp-tables
-description: Turn experiment results into a paper's table with exp-tables. Reads runs from CSV/TSV (a wandb export too), JSON, JSON Lines, TensorBoard logs or MLflow mlruns folders; averages each metric over seeds with its spread; tests each method against the best of its column (paired or Welch's t, Wilcoxon, bootstrap, corrected per column) and marks as best only what the seeds support; writes booktabs LaTeX, Markdown, HTML or JSON, and a config file that makes the same table again. Use when the user asks for a results table, wants to know whether an improvement is significant or within the noise of the seeds, how many seeds they need, or wants their paper's tables kept in step with their results.
+description: Turn experiment results into a paper's table with exp-tables. Reads runs from CSV/TSV (a wandb export too), JSON, JSON Lines, TensorBoard logs, MLflow mlruns folders or lm-evaluation-harness results; averages each metric over seeds with its spread; tests each method against the best of its column (paired or Welch's t, Wilcoxon, bootstrap, corrected per column) and marks as best only what the seeds support; writes booktabs LaTeX, Markdown, HTML or JSON, and a config file that makes the same table again. Use when the user asks for a results table, wants to know whether an improvement is significant or within the noise of the seeds, how many seeds they need, or wants their paper's tables kept in step with their results.
 license: MIT
 compatibility: Needs Python 3.10+ and uv. Runs exp-tables with uvx from GitHub (git+https://github.com/zch6a/exp-tables) unless an exp-tables command is installed. No dependencies; nothing is sent anywhere.
 metadata:
@@ -34,4 +34,7 @@ when the guess is wrong: `--rows model --columns task --seed trial --metrics acc
   steadier one, slightly better on average, is not. That is the point: say so rather than "fixing" it.
 - Underlined is the second best, shown only after a single best.
 - With one seed per method there is no spread and no test: tell the user the table cannot say whether differences
-  are real, and suggest more seeds (the report's estimate says how many).
+  are real, and suggest more seeds (the report's estimate says how many). Single results with a standard error
+  (lm-evaluation-harness reports one, or a CSV column `acc_stderr`) are tested by it instead (a z test).
+- Notes on stderr say what looks wrong in the runs (several runs of one cell sharing a seed, untested cells): pass
+  them on, and fix the layout they point at (`--columns`, `--filter`) rather than ignoring them.

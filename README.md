@@ -102,7 +102,7 @@ It exits with 0 when the table is made, 1 when `--check` finds a difference, 2 w
 |---|---|
 | **CSV, TSV** | one run per row; a column is a metric when all its values are numbers (`93.1%`, `1,234`, `1e-3` too) or missing (empty, `nan`, `n/a`, `-`), unless its name is a seed's (seed, trial, fold, …), a configuration's (under `config/`, `params/`, `args/`, or a hyperparameter's: `lr`, `batch_size`, `weight_decay`, …) or bookkeeping (runtime, timestamps, state); `--metrics` picks the ones to show. A data frame's index column is left out. wandb's "Export runs" CSV is one |
 | **JSON, JSON Lines** | a list of runs, `{"runs": [...]}`, or runs by name; nested objects flattened (`config/lr`); `NaN` and infinities as missing |
-| **lm-evaluation-harness** | its results JSON (`results_*.json`, as the Open LLM Leaderboard publishes them): one run per task, with the fields `model` and `task`, each metric by name (`acc`, `exact_match (strict-match)`); give several files to compare models |
+| **lm-evaluation-harness** | its results JSON (`results_*.json`, as the Open LLM Leaderboard publishes them): one run per task, with the fields `model` and `task`, each metric by name (`acc`, `exact_match (strict-match)`) with its standard error; give several files to compare models |
 | **TensorBoard** | a folder of runs: each folder with `events.out.tfevents.*` is a run, its path giving its fields (`ours/lr=0.1/seed_2`: method `ours`, `lr` 0.1, seed 2); each tag's value at its last step (a logged learning rate or epoch count is not shown unless asked for). Its own reader: no TensorFlow; about 8 MB of scalar logs a second |
 | **MLflow** | an `mlruns` folder: parameters and tags as fields (MLflow's own `mlflow.*` tags left out), each metric's last value; deleted runs left out |
 
@@ -114,7 +114,10 @@ Welch's otherwise (or the Wilcoxon signed-rank test, exact up to 25 pairs, ties 
 with the column's p values corrected together (Holm by default). The tests decide the bold: a row is bold when it
 is not significantly worse than the best (of the rows with two or more seeds), even if it prints the same number. A
 row with one seed cannot be tested: it is left unmarked, and a note says so; in a table with no tests at all, the
-best is marked as printed. Effect sizes: Hedges' g and Cliff's delta. "Seeds needed":
+best is marked as printed. Single results that come with a standard error (an
+evaluation harness's, over its test items; a CSV column `acc_stderr` or `acc_se`) are compared by a z test on it,
+shown as their ± (counting the two errors as independent, which is conservative when both were measured on the
+same items). Effect sizes: Hedges' g and Cliff's delta. "Seeds needed":
 the smallest n for which a difference of the size seen would be found with power 0.8, by the t distribution at n's
 own degrees of freedom (paired seeds by the spread of their differences).
 

@@ -139,6 +139,22 @@ def bootstrap(a: list[float], b: list[float], resamples: int = 10_000, seed: int
     return Result("bootstrap", seen, extreme / done)
 
 
+def ztest(a: float, se_a: float, b: float, se_b: float) -> Result:
+    """Two single results with their standard errors (an evaluation's, over its test items), two-sided: z is the
+    difference over the root of the summed squared errors. Treating the errors as independent is conservative when
+    both were measured on the same items (their differences are positively correlated).
+
+    >>> r = ztest(0.58, 0.01, 0.53, 0.012)  # 0.05 / sqrt(0.01^2 + 0.012^2) = 3.20
+    >>> round(r.statistic, 2), round(r.p, 4)
+    (3.2, 0.0014)
+    """
+    se = math.sqrt(se_a**2 + se_b**2)
+    if se == 0:
+        return Result("z (standard errors)", 0.0 if a == b else math.copysign(math.inf, a - b), 1.0 if a == b else 0.0)
+    z = (a - b) / se
+    return Result("z (standard errors)", z, min(1.0, math.erfc(abs(z) / math.sqrt(2))))
+
+
 def holm(ps: list[float]) -> list[float]:
     """Holm's step-down correction for testing several pairs at once (controls the chance of any false claim).
 

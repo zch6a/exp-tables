@@ -38,7 +38,7 @@ runs:
         args=(--config "$CONFIG")
         if [ -n "$FORMAT" ]; then args+=("--format=$FORMAT"); fi
         set +e
-        out="$(uvx --from "$ACTION_PATH" exp-tables "${args[@]}" --check "$TABLE" 2>&1)"  # notes and errors too
+        out="$(uvx -q --from "$ACTION_PATH" exp-tables "${args[@]}" --check "$TABLE" 2>&1)"  # notes and errors too
         code=$?
         if [ "$code" -eq 0 ]; then echo "matches=true" >> "$GITHUB_OUTPUT"; else echo "matches=false" >> "$GITHUB_OUTPUT"; fi
         echo "$out"
@@ -50,12 +50,12 @@ runs:
           echo '```'
           if [ "$code" -ne 2 ]; then
             echo
-            uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --format markdown 2>/dev/null
+            uvx -q --from "$ACTION_PATH" exp-tables --config "$CONFIG" --format markdown 2>/dev/null
             echo
             echo '<details><summary>What the marks rest on</summary>'
             echo
             echo '```text'
-            uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --report -o "$RUNNER_TEMP/exp-tables-table.txt" 2>/dev/null
+            uvx -q --from "$ACTION_PATH" exp-tables --config "$CONFIG" --report -o "$RUNNER_TEMP/exp-tables-table.txt" 2>/dev/null
             echo '```'
             echo '</details>'
           fi

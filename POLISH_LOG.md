@@ -252,3 +252,42 @@ Tests: 94 (were 78), Python 3.10 and 3.13; ruff, mypy clean.
 
 Next: round 3. Worth doing: lm-evaluation-harness gives a standard error per metric, so a single-run comparison of
 models could be tested with it (a z test on the difference) instead of being untested.
+
+### 2026-11-13 — polishing round 3
+
+Round 2's CI first failed on `ruff format --check`: ruff also formats Python blocks inside the READMEs, and my commit
+gate only ran `ruff check`. Fixed (the README's comments as ruff aligns them), and the gate now runs both; CI green.
+
+**Single results tested by their standard errors.** LLM evaluations rarely have seeds, so round 2's leaderboard
+tables were all "untested". lm-evaluation-harness reports a standard error per metric (over its test items); so do
+many CSVs (`acc_stderr`, `acc_se`). Now:
+
+- runs carry `errors` (a metric's standard error): the harness reader keeps them, and any `X_stderr` / `X_se` /
+  `X_sem` / `X standard error` metric beside `X` becomes `X`'s error rather than a column of its own;
+- two single results are compared by a z test (difference over the root of the summed squared errors; independent
+  errors, conservative when both were measured on the same items), corrected per column like the rest;
+- the error is printed as the single result's ±, in every format, with decimals from it; the legend says so ("one
+  run per cell, ± its standard error as the evaluation reported it", or the same as an aside beside seeds), the
+  report line gives both errors instead of seed counts and effect sizes, the JSON has each cell's `error`;
+- single results beside rows with seeds are not tested (the two kinds of spread are not comparable), and the note
+  about untested cells says so.
+
+On the round-2 leaderboard shape (two models, harness errors 0.01): 0.58 vs 0.53 is now significant (z = 3.5) and
+only the better model is bold, where before both were "untested".
+
+**The Action on a realistic repository** (a made-up paper repository: results/, tables/main.json from
+`--save-config`, paper/tables/main.tex), run locally through Git Bash with GitHub's variables (`GITHUB_OUTPUT`,
+`GITHUB_STEP_SUMMARY`, `RUNNER_TEMP`): matching (exit 0, `matches=true`), stale with `fail: true` (exit 1, the diff in
+the summary) and `fail: false` (exit 0, `matches=false`), and a missing config (exit 2). Found and fixed:
+
+- uv's "Building … Installed" lines went into the summary's diff block: `uvx -q`.
+- Errors about the runs or the config printed the whole usage text before the message (in the summary too): now one
+  line, "exp-tables: error: … (exp-tables --help lists the options)"; argparse's own errors keep the usage.
+- Paths in messages printed with backslashes on Windows: POSIX form.
+
+**The rest.** The Skill mentions the harness, the z test and the notes (pass them on, fix the layout they point at);
+README and CHANGELOG updated. `--help`, first run and error messages re-read.
+
+Tests: 98 (were 94), Python 3.10 and 3.13; ruff (check and format), mypy clean.
+
+Next: round 4.

@@ -98,7 +98,7 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 |---|---|
 | **CSV、TSV** | 每行一次运行；某列的值全是数字（也认 `93.1%`、`1,234`、`1e-3`）或缺失（空、`nan`、`n/a`、`-`）就是指标，除非它的名字是种子（seed、trial、fold 等）、配置（位于 `config/`、`params/`、`args/` 下，或是超参数名：`lr`、`batch_size`、`weight_decay` 等）或记录信息（运行时长、时间戳、状态）；`--metrics` 选择要显示的指标。数据框的索引列会被忽略。wandb 的 "Export runs" CSV 也是这种格式 |
 | **JSON、JSON Lines** | 运行的列表、`{"runs": [...]}`，或按名字组织的运行；嵌套对象会展开（`config/lr`）；`NaN` 和无穷大视为缺失 |
-| **lm-evaluation-harness** | 它的结果 JSON（`results_*.json`，Open LLM Leaderboard 公开的就是这种）：每个任务一次运行，字段为 `model` 和 `task`，指标按名字（`acc`、`exact_match (strict-match)`）；给多个文件即可比较模型 |
+| **lm-evaluation-harness** | 它的结果 JSON（`results_*.json`，Open LLM Leaderboard 公开的就是这种）：每个任务一次运行，字段为 `model` 和 `task`，指标按名字（`acc`、`exact_match (strict-match)`），并带上它的标准误；给多个文件即可比较模型 |
 | **TensorBoard** | 一个包含多次运行的目录：每个含 `events.out.tfevents.*` 的子目录是一次运行，路径给出它的字段（`ours/lr=0.1/seed_2`：method 为 `ours`、`lr` 为 0.1、seed 为 2）；每个 tag 取最后一步的值（记录下来的学习率、epoch 数默认不显示）。自带解析器，不需要 TensorFlow；标量日志每秒约 8 MB |
 | **MLflow** | `mlruns` 目录：参数和标签作为字段（MLflow 自己的 `mlflow.*` 标签除外），每个指标取最后的值；已删除的运行不读 |
 
@@ -106,7 +106,7 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 
 跨种子的均值与样本标准差；95% 区间来自 Student t 分布。每个有方向的列：其最佳方法与每个至少有两个种子的其他方法比较——
 两者种子相同时用配对 t 检验，否则用 Welch 检验（也可选 Wilcoxon 符号秩检验，25 对以内精确计算、含并列，或固定随机种子的 bootstrap）——
-同一列的 p 值一起校正（默认 Holm）。加粗由检验决定：没有显著差于最佳（在有两个以上种子的行中）的行加粗，即使印出来的数字相同也一样。只有一个种子的行无法检验，不作标记，并会提示；整张表都无法检验时，按印出的数字标最佳。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
+同一列的 p 值一起校正（默认 Holm）。加粗由检验决定：没有显著差于最佳（在有两个以上种子的行中）的行加粗，即使印出来的数字相同也一样。只有一个种子的行无法检验，不作标记，并会提示；整张表都无法检验时，按印出的数字标最佳。带标准误的单次结果（评测框架在测试样本上算出的标准误；CSV 里的 `acc_stderr` 或 `acc_se` 列）用 z 检验比较，标准误显示在 ± 后面（把两者的误差当作独立，同一批测试样本上测得时这样更保守）。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
 按 n 自身的自由度用 t 分布计算（配对种子按差值的波动）。
 
 全部用标准库实现，并对照独立数值核对（t 分位数对照公开的表，非整数自由度的 t 分布对照数值积分，Wilcoxon 精确 p 值手算核对）。

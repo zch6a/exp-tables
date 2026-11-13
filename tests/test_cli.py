@@ -56,20 +56,15 @@ def test_filters_and_report(results: Path, capsys: pytest.CaptureFixture[str], t
 
 
 def test_errors_say_what_there_is(results: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as e:
-        main([str(results), "--metrics", "bleu"])
-    assert e.value.code == 2 and "no metric 'bleu' in the runs; their metrics: accuracy, loss" in capsys.readouterr().err
-    with pytest.raises(SystemExit):
-        main([str(results), "--rows", "model"])
+    assert main([str(results), "--metrics", "bleu"]) == 2
+    assert "no metric 'bleu' in the runs; their metrics: accuracy, loss" in capsys.readouterr().err
+    assert main([str(results), "--rows", "model"]) == 2
     assert "no field 'model' in the runs; their fields: method, dataset, seed" in capsys.readouterr().err
-    with pytest.raises(SystemExit):
-        main([str(results), "--filter", "dataset=imagenet"])
+    assert main([str(results), "--filter", "dataset=imagenet"]) == 2
     assert "no run matches the filters" in capsys.readouterr().err
-    with pytest.raises(SystemExit):
-        main([str(results), "--better", "loss=down"])
+    assert main([str(results), "--better", "loss=down"]) == 2
     assert "takes higher or lower" in capsys.readouterr().err
-    with pytest.raises(SystemExit):
-        main(["missing.csv"])
+    assert main(["missing.csv"]) == 2
     assert "no such file or folder" in capsys.readouterr().err
 
 

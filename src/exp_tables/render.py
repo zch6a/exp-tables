@@ -16,19 +16,24 @@ def _value(c: Cell, decimals: int, spread: str) -> tuple[str, str]:
     if c.summary is None:
         return "--", ""
     mean = f"{c.summary.mean:.{decimals}f}"
-    if spread == "none" or c.summary.n < 2:
+    if spread == "none" or (c.summary.n < 2 and c.error is None):
         return mean, ""
-    return mean, f"{_spread(c.summary, spread):.{decimals}f}"
+    shown = c.error if c.summary.n < 2 and c.error is not None else _spread(c.summary, spread)
+    return mean, f"{shown:.{decimals}f}"
 
 
 def legend(t: Table) -> str:
     """What the marks and the spread mean, in a sentence."""
     spread = {"std": "standard deviation", "sem": "standard error", "ci": "95% confidence interval"}.get(t.spread)
     cells = [c for row in t.cells for c in row]
-    if not any(c.summary and c.summary.n > 1 for c in cells):
-        parts = ["one run per cell: no spread"]
+    seeded = any(c.summary and c.summary.n > 1 for c in cells)
+    errors = t.spread != "none" and any(c.summary and c.summary.n == 1 and c.error is not None for c in cells)
+    if not seeded:
+        parts = ["one run per cell, ± its standard error as the evaluation reported it" if errors else "one run per cell: no spread"]
     else:
         parts = [f"mean ± {spread} over seeds" if spread else "mean over seeds"]
+        if errors:
+            parts[0] += " (a single run: ± its standard error, as reported)"
     if t.comparisons:
         parts.append(f"bold: the best, and any not significantly different from it ({_test_name(t)})")
     elif any(c.best for c in cells):  # marked as printed: no test asked, or none possible
