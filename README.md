@@ -3,7 +3,7 @@
 # exp-tables
 
 **Your results, as the table your paper needs, and only as good as they really are.** exp-tables reads your runs
-(CSV, JSON, a wandb export, TensorBoard logs, MLflow), averages every metric over seeds with its spread, tests each
+(CSV, JSON, a wandb export, TensorBoard logs, MLflow, lm-evaluation-harness results), averages every metric over seeds with its spread, tests each
 method against the best of its column, and writes the booktabs LaTeX (or Markdown, or HTML) table with the best
 in bold — every method the seeds cannot tell apart from the best, not just the one with the highest mean.
 
@@ -84,13 +84,13 @@ exp-tables --config table.json --check paper/table.tex  # does the paper's table
 
 | option | |
 |---|---|
-| `--rows`, `--columns`, `--metrics`, `--seed` | the layout, when the guess is wrong (rows: method, model, …; column groups: another field that varies within a row; the seed field by its name or values like `seed 42`; every metric). `--columns ""` for no groups; a number read as a metric (a data ratio) can be named here and becomes part of what a run is |
-| `--filter FIELD=VALUE` | keep only some runs (repeatable; numbers compare as numbers: `ratio=0.10` keeps 0.1) |
+| `--rows`, `--columns`, `--metrics`, `--seed` | the layout, when the guess is wrong (rows: method, model, …; column groups: another field that varies within a row; the seed field by its name or values like `seed 42`; every metric). `--columns none` for no groups; a number read as a metric (a data ratio) can be named here and becomes part of what a run is |
+| `--filter FIELD=VALUE` | keep only some runs (repeatable; `task=arc,gsm8k` keeps either; numbers compare as numbers: `ratio=0.10` keeps 0.1) |
 | `--better METRIC=higher\|lower` | which way is better, when the name does not say (accuracy, BLEU, F1 up; loss, error, FID, ECE, perplexity down) |
 | `--label NAME=TEXT`, `--decimals METRIC=N` | how the table prints names and numbers (default decimals: two significant digits of the spread) |
 | `--spread std\|sem\|ci\|none` | after the mean: standard deviation (default), standard error, 95% t interval, nothing |
 | `--test auto\|welch\|paired\|wilcoxon\|bootstrap\|none` | the test against each column's best (auto: paired t when the seeds pair up, else Welch's); `--alpha`, `--correction holm\|bh\|none` |
-| `--format latex\|markdown\|html\|json` | the output (LaTeX needs `\usepackage{booktabs}`) |
+| `--format latex\|markdown\|html\|json` | the output (LaTeX needs `\usepackage{booktabs}`; labels are escaped, and a label in a non-Latin script needs a document set up for it) |
 | `--save-config FILE`, `--config FILE` | a config that makes the same table again: inputs (relative to it), filters, the layout as worked out, every option, the version |
 | `--check FILE` | compare with a committed table: exit 1 and the lines that differ |
 
@@ -102,7 +102,8 @@ It exits with 0 when the table is made, 1 when `--check` finds a difference, 2 w
 |---|---|
 | **CSV, TSV** | one run per row; a column is a metric when all its values are numbers (`93.1%`, `1,234`, `1e-3` too) or missing (empty, `nan`, `n/a`, `-`), unless its name is a seed's (seed, trial, fold, …), a configuration's (under `config/`, `params/`, `args/`, or a hyperparameter's: `lr`, `batch_size`, `weight_decay`, …) or bookkeeping (runtime, timestamps, state); `--metrics` picks the ones to show. A data frame's index column is left out. wandb's "Export runs" CSV is one |
 | **JSON, JSON Lines** | a list of runs, `{"runs": [...]}`, or runs by name; nested objects flattened (`config/lr`); `NaN` and infinities as missing |
-| **TensorBoard** | a folder of runs: each folder with `events.out.tfevents.*` is a run, its path giving its fields (`ours/lr=0.1/seed_2`: method `ours`, `lr` 0.1, seed 2); each tag's value at its last step. Its own reader: no TensorFlow |
+| **lm-evaluation-harness** | its results JSON (`results_*.json`, as the Open LLM Leaderboard publishes them): one run per task, with the fields `model` and `task`, each metric by name (`acc`, `exact_match (strict-match)`); give several files to compare models |
+| **TensorBoard** | a folder of runs: each folder with `events.out.tfevents.*` is a run, its path giving its fields (`ours/lr=0.1/seed_2`: method `ours`, `lr` 0.1, seed 2); each tag's value at its last step (a logged learning rate or epoch count is not shown unless asked for). Its own reader: no TensorFlow; about 8 MB of scalar logs a second |
 | **MLflow** | an `mlruns` folder: parameters and tags as fields (MLflow's own `mlflow.*` tags left out), each metric's last value; deleted runs left out |
 
 ## The statistics

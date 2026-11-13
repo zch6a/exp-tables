@@ -46,8 +46,8 @@ def masked_crc(data: bytes) -> int:
     return (((c >> 15) | (c << 17)) + 0xA282EAD8) & 0xFFFFFFFF
 
 
-def records(data: bytes) -> Iterator[bytes]:
-    """The records of a TFRecord file; a record whose checksums do not hold, or that is cut short, ends it."""
+def _frames(data: bytes) -> Iterator[tuple[bytes, int]]:
+    """Each record's data and its checksum, the length checked (a bad length, or a record cut short, ends the file)."""
     i = 0
     while i + 12 <= len(data):
         header = data[i : i + 8]
@@ -55,18 +55,25 @@ def records(data: bytes) -> Iterator[bytes]:
         (length_crc,) = struct.unpack("<I", data[i + 8 : i + 12])
         if masked_crc(header) != length_crc or i + 12 + length + 4 > len(data):
             return
-        body = data[i + 12 : i + 12 + length]
         (body_crc,) = struct.unpack("<I", data[i + 12 + length : i + 16 + length])
-        if masked_crc(body) != body_crc:
+        yield data[i + 12 : i + 12 + length], body_crc
+        i += 16 + length
+
+
+def records(data: bytes) -> Iterator[bytes]:
+    """The records of a TFRecord file; a record whose checksums do not hold, or that is cut short, ends it."""
+    for body, crc in _frames(data):
+        if masked_crc(body) != crc:
             return
         yield body
-        i += 16 + length
 
 
 # ---------------------------------------------------------------- protobuf, as far as scalars go
 
 
 def _varint(data: bytes, i: int) -> tuple[int, int]:
+    if i < len(data) and data[i] < 0x80:  # one byte: most keys and lengths
+        return data[i], i + 1
     shift = value = 0
     while True:
         if i >= len(data):
@@ -144,32 +151,45 @@ def _tensor_scalar(data: bytes) -> float | None:
 
 
 def scalars(data: bytes) -> Iterator[tuple[str, int, float, float]]:
-    """(tag, step, wall time, value) of every scalar in an event file's bytes."""
-    for record in records(data):
-        step, wall, summary = 0, 0.0, b""
-        try:
-            for number, wire, value in fields(record):
-                if number == 1 and wire == 1:
-                    wall = struct.unpack("<d", struct.pack("<Q", value))[0]
-                elif number == 2 and wire == 0:
-                    step = _signed(int(value))  # type: ignore[arg-type]
-                elif number == 5 and wire == 2:
-                    summary = value  # type: ignore[assignment]
-            for number, wire, value in fields(summary):
-                if number != 1 or wire != 2:
-                    continue
-                tag, scalar = "", None
-                for n, w, v in fields(value):  # type: ignore[arg-type]
-                    if n == 1 and w == 2:
-                        tag = v.decode("utf-8", "replace")  # type: ignore[union-attr]
-                    elif n == 2 and w == 5:
-                        scalar = struct.unpack("<f", struct.pack("<I", v))[0]
-                    elif n == 8 and w == 2:
-                        scalar = _tensor_scalar(v)  # type: ignore[arg-type]
-                if tag and scalar is not None:
-                    yield tag, step, wall, scalar
-        except (ValueError, struct.error):
-            continue  # a record that is not an event as expected: skipped
+    """(tag, step, wall time, value) of every scalar in an event file's bytes. A record's checksum is checked when it
+    holds scalars (a corrupt one ends the file); the others (images, histograms, graphs: most of the bytes) are only
+    skipped, so they are not checked: CRC32C in Python is the slow part of reading.
+    """
+    for record, crc in _frames(data):
+        found = list(_record_scalars(record))
+        if found and masked_crc(record) != crc:
+            return
+        yield from found
+
+
+def _record_scalars(record: bytes) -> Iterator[tuple[str, int, float, float]]:
+    """The scalars of one Event record; none when it is not an event as expected."""
+    step, wall, summary = 0, 0.0, b""
+    out = []
+    try:
+        for number, wire, value in fields(record):
+            if number == 1 and wire == 1:
+                wall = struct.unpack("<d", struct.pack("<Q", value))[0]
+            elif number == 2 and wire == 0:
+                step = _signed(int(value))  # type: ignore[arg-type]
+            elif number == 5 and wire == 2:
+                summary = value  # type: ignore[assignment]
+        for number, wire, value in fields(summary):
+            if number != 1 or wire != 2:
+                continue
+            tag, scalar = "", None
+            for n, w, v in fields(value):  # type: ignore[arg-type]
+                if n == 1 and w == 2:
+                    tag = v.decode("utf-8", "replace")  # type: ignore[union-attr]
+                elif n == 2 and w == 5:
+                    scalar = struct.unpack("<f", struct.pack("<I", v))[0]
+                elif n == 8 and w == 2:
+                    scalar = _tensor_scalar(v)  # type: ignore[arg-type]
+            if tag and scalar is not None:
+                out.append((tag, step, wall, scalar))
+    except (ValueError, struct.error):
+        return iter(())  # a record that is not an event as expected: skipped
+    return iter(out)
 
 
 # ---------------------------------------------------------------- runs
@@ -201,6 +221,25 @@ def run_fields(relative: str) -> dict[str, str]:
     return out
 
 
+def _last_values(data: bytes) -> dict[str, tuple[int, float, float]]:
+    """Each tag's (step, wall time, value) at its last step in one file. Only the records whose values are kept have
+    their checksum checked (CRC32C in Python is slow, and a log holds hundreds of thousands of records); if one of them
+    does not hold, the file is read again checking every record, a corrupt one ending it."""
+    last: dict[str, tuple[int, float, float, bytes, int]] = {}
+    for body, crc in _frames(data):
+        for tag, step, wall, value in _record_scalars(body):
+            if tag not in last or (step, wall) >= last[tag][:2]:
+                last[tag] = (step, wall, value, body, crc)
+    kept = {id(v[3]): v for v in last.values()}
+    if all(masked_crc(body) == crc for *_, body, crc in kept.values()):
+        return {tag: v[:3] for tag, v in last.items()}
+    checked: dict[str, tuple[int, float, float]] = {}
+    for tag, step, wall, value in scalars(data):
+        if tag not in checked or (step, wall) >= checked[tag][:2]:
+            checked[tag] = (step, wall, value)
+    return checked
+
+
 def read_tensorboard(folder: Path) -> list[Run]:
     """Runs from a folder of TensorBoard logs: each folder holding event files is a run (its fields from its path),
     each tag a metric at its last step (the latest written, when a step repeats)."""
@@ -212,7 +251,7 @@ def read_tensorboard(folder: Path) -> list[Run]:
         relative = run_dir.relative_to(folder).as_posix() if run_dir != folder else run_dir.name
         last: dict[str, tuple[int, float, float]] = {}  # tag -> (step, wall time, value)
         for f in files:
-            for tag, step, wall, value in scalars(f.read_bytes()):
+            for tag, (step, wall, value) in _last_values(f.read_bytes()).items():
                 if tag not in last or (step, wall) >= last[tag][:2]:
                     last[tag] = (step, wall, value)
         if last:

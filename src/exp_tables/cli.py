@@ -51,11 +51,15 @@ def _list(text: str | None) -> list[str]:
 
 
 def _matches(value: str | None, wanted: str) -> bool:
-    """A field's value against a filter's: as text, or as numbers ("0.10" is 0.1)."""
+    """A field's value against a filter's: as text, or as numbers ("0.10" is 0.1); "a,b" is either."""
     if value == wanted:
         return True
-    a, b = number(value or ""), number(wanted)
-    return a is not None and a == b
+    for one in wanted.split(","):
+        one = one.strip()
+        a, b = number(value or ""), number(one)
+        if value == one or (a is not None and a == b):
+            return True
+    return False
 
 
 def load_runs(inputs: list[Path], filters: dict[str, str], settings: list[str] | None = None) -> list[Run]:
@@ -235,7 +239,7 @@ def _main(argv: list[str] | None) -> int:
                                  epilog="exit status: 0 done, 1 when --check finds a difference, 2 when it could not make the table")  # fmt: skip
     ap.add_argument("inputs", nargs="*", type=Path, metavar="INPUT", help="CSV, TSV, JSON or JSONL files, TensorBoard log folders, mlruns folders")
     ap.add_argument("--rows", help="the field(s) naming a row, comma-separated (default: method, model, … or the first that varies)")
-    ap.add_argument("--columns", help="the field(s) grouping columns (default: another field that varies)")
+    ap.add_argument("--columns", help="the field(s) grouping columns, or none (default: another field that varies within a row)")
     ap.add_argument("--metrics", help="the metrics shown, in order (default: all)")
     ap.add_argument("--seed", help="the field telling seeds apart (default: by its name: seed, trial, fold, …)")
     ap.add_argument("--filter", action="append", default=[], metavar="FIELD=VALUE", help="keep only the runs with this value (repeatable)")
@@ -269,8 +273,8 @@ def _main(argv: list[str] | None) -> int:
         given = dict(config.get("spec", {}))
         if args.rows:
             given["rows"] = _list(args.rows)
-        if args.columns is not None:
-            given["columns"] = _list(args.columns)
+        if args.columns is not None:  # "none" (or ""; PowerShell 5 drops an empty argument): no groups
+            given["columns"] = [] if args.columns.strip().lower() in ("", "none") else _list(args.columns)
         if args.metrics:
             given["metrics"] = _list(args.metrics)
         for key in ("seed", "spread", "test", "alpha", "correction"):

@@ -2,7 +2,7 @@
 
 # exp-tables
 
-**把你的实验结果变成论文需要的表格，而且只说结果真正支持的话。** exp-tables 读取你的运行记录（CSV、JSON、wandb 导出、TensorBoard 日志、MLflow），
+**把你的实验结果变成论文需要的表格，而且只说结果真正支持的话。** exp-tables 读取你的运行记录（CSV、JSON、wandb 导出、TensorBoard 日志、MLflow、lm-evaluation-harness 结果），
 对每个指标跨种子求均值和波动，把每个方法和该列最佳的方法做显著性检验，然后写出 booktabs LaTeX（或 Markdown、HTML）表格：
 加粗的是最佳，以及所有种子无法与最佳区分开的方法，而不只是均值最高的那一个。
 
@@ -80,13 +80,13 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 
 | 选项 | |
 |---|---|
-| `--rows`、`--columns`、`--metrics`、`--seed` | 推断不对时指定表结构（行：method、model 等；列组：在同一行内取值变化的另一个字段；种子字段按名字或 `seed 42` 这样的取值识别；默认全部指标）。`--columns ""` 表示不分组；被读成指标的数字（例如数据比例）也可以写在这里，它就成为运行本身的属性 |
-| `--filter FIELD=VALUE` | 只保留部分运行（可重复；数字按数值比较：`ratio=0.10` 保留 0.1） |
+| `--rows`、`--columns`、`--metrics`、`--seed` | 推断不对时指定表结构（行：method、model 等；列组：在同一行内取值变化的另一个字段；种子字段按名字或 `seed 42` 这样的取值识别；默认全部指标）。`--columns none` 表示不分组；被读成指标的数字（例如数据比例）也可以写在这里，它就成为运行本身的属性 |
+| `--filter FIELD=VALUE` | 只保留部分运行（可重复；`task=arc,gsm8k` 保留其中任一；数字按数值比较：`ratio=0.10` 保留 0.1） |
 | `--better METRIC=higher\|lower` | 名字看不出方向时指定（accuracy、BLEU、F1 越高越好；loss、error、FID、ECE、perplexity 越低越好） |
 | `--label NAME=TEXT`、`--decimals METRIC=N` | 名称和数字的显示方式（默认小数位：波动的两位有效数字） |
 | `--spread std\|sem\|ci\|none` | 均值后面显示：标准差（默认）、标准误、95% t 区间、不显示 |
 | `--test auto\|welch\|paired\|wilcoxon\|bootstrap\|none` | 与每列最佳比较所用的检验（auto：种子能配对时用配对 t，否则 Welch）；`--alpha`、`--correction holm\|bh\|none` |
-| `--format latex\|markdown\|html\|json` | 输出格式（LaTeX 需要 `\usepackage{booktabs}`） |
+| `--format latex\|markdown\|html\|json` | 输出格式（LaTeX 需要 `\usepackage{booktabs}`；名称会转义，非拉丁文字的名称需要文档本身支持） |
 | `--save-config FILE`、`--config FILE` | 能再生成同一张表的配置：输入文件（相对配置文件的路径）、过滤条件、推断出的表结构、所有选项、版本 |
 | `--check FILE` | 与已提交的表比较：不一致时退出码为 1，并列出不同的行 |
 
@@ -98,7 +98,8 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 |---|---|
 | **CSV、TSV** | 每行一次运行；某列的值全是数字（也认 `93.1%`、`1,234`、`1e-3`）或缺失（空、`nan`、`n/a`、`-`）就是指标，除非它的名字是种子（seed、trial、fold 等）、配置（位于 `config/`、`params/`、`args/` 下，或是超参数名：`lr`、`batch_size`、`weight_decay` 等）或记录信息（运行时长、时间戳、状态）；`--metrics` 选择要显示的指标。数据框的索引列会被忽略。wandb 的 "Export runs" CSV 也是这种格式 |
 | **JSON、JSON Lines** | 运行的列表、`{"runs": [...]}`，或按名字组织的运行；嵌套对象会展开（`config/lr`）；`NaN` 和无穷大视为缺失 |
-| **TensorBoard** | 一个包含多次运行的目录：每个含 `events.out.tfevents.*` 的子目录是一次运行，路径给出它的字段（`ours/lr=0.1/seed_2`：method 为 `ours`、`lr` 为 0.1、seed 为 2）；每个 tag 取最后一步的值。自带解析器，不需要 TensorFlow |
+| **lm-evaluation-harness** | 它的结果 JSON（`results_*.json`，Open LLM Leaderboard 公开的就是这种）：每个任务一次运行，字段为 `model` 和 `task`，指标按名字（`acc`、`exact_match (strict-match)`）；给多个文件即可比较模型 |
+| **TensorBoard** | 一个包含多次运行的目录：每个含 `events.out.tfevents.*` 的子目录是一次运行，路径给出它的字段（`ours/lr=0.1/seed_2`：method 为 `ours`、`lr` 为 0.1、seed 为 2）；每个 tag 取最后一步的值（记录下来的学习率、epoch 数默认不显示）。自带解析器，不需要 TensorFlow；标量日志每秒约 8 MB |
 | **MLflow** | `mlruns` 目录：参数和标签作为字段（MLflow 自己的 `mlflow.*` 标签除外），每个指标取最后的值；已删除的运行不读 |
 
 ## 统计方法

@@ -28,6 +28,8 @@ HIGHER = re.compile(
 GENERIC = re.compile(r"score|top[- ]?[15]", re.I)  # "brier score", "top-1 error": the other word decides
 # a field whose values all look like "seed 42", "s1", "trial-3": the seed, whatever the column is called
 SEED_VALUE = re.compile(r"^(?:seed|s|trial|run|rep|repeat|fold)[ _=-]?\d+$", re.I)
+# a setting or a counter that a logger records like a metric (TensorBoard, MLflow): not shown unless asked for
+LOGGED_SETTING = re.compile(r"(?:^|[/_ .-])(?:lr|learning[_ ]rate|epoch|global[_ ]step|step|lr[_ ]scale|momentum|weight[_ ]decay)$", re.I)
 ROW_FIELDS = ("method", "model", "algorithm", "approach", "system", "baseline", "name", "run", "experiment")
 
 
@@ -169,7 +171,7 @@ def as_fields(runs: list[Run], names: list[str]) -> list[Run]:
 def resolve(runs: list[Run], spec: Spec) -> Spec:
     """The spec with what was left empty worked out: the seed field (by its name, else by values like "seed 42"),
     the row field (method, model, …, else the first field that varies), the column fields (another field that varies within a row, but not one that
-    names every run apart, like a run id), and every metric."""
+    names every run apart, like a run id), and every metric but a logged setting (a learning rate, an epoch count)."""
     names = list(dict.fromkeys(k for r in runs for k in r.fields))
     seed = spec.seed or next((n for n in names if SEED.match(n.rsplit("/", 1)[-1]) and n not in ("run", "run_id")), "")
     seed = seed or next((n for n in names if _varying(runs, n) and all(SEED_VALUE.match(r.fields.get(n, "")) for r in runs)), "")
@@ -189,7 +191,8 @@ def resolve(runs: list[Run], spec: Spec) -> Spec:
             if n not in rows and n not in ids and not n.lower().startswith(("config/", "params/")) and (not rows or _crosses(runs, rows, n))
         ][:1]
     )
-    metrics = spec.metrics or list(dict.fromkeys(m for r in runs for m in r.metrics))
+    found = list(dict.fromkeys(m for r in runs for m in r.metrics))
+    metrics = spec.metrics or [m for m in found if not LOGGED_SETTING.search(m)] or found
     return Spec(rows, columns, metrics, seed, spec.better, spec.spread, spec.decimals, spec.labels, spec.test, spec.alpha, spec.correction)
 
 
@@ -201,7 +204,7 @@ def _auto_decimals(summaries: list[Summary]) -> int:
     >>> _auto_decimals([Summary([1.2e-5, 1.3e-5]), Summary([3.1e-5, 3.0e-5])]), _auto_decimals([Summary([93.125]), Summary([91.5])])
     (8, 2)
     """
-    spreads = [s.std for s in summaries if s.n > 1 and math.isfinite(s.std) and s.std > 0]
+    spreads = [s.std for s in summaries if s.n > 1 and math.isfinite(s.std) and s.std > 1e-9 * abs(s.mean)]  # not float noise
     if spreads:
         typical = sorted(spreads)[(len(spreads) - 1) // 2]
         return max(0, min(10, 1 - math.floor(math.log10(typical) + 1e-9)))  # 0.01 computed as 0.00999… is still 0.01

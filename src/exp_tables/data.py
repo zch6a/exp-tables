@@ -116,6 +116,8 @@ def read_json(text: str, name: str = "") -> list[Run]:
     """Runs from JSON: a list of runs, an object with a list under "runs" (or "results", "experiments"), or an object
     of runs by name (the name becomes the field "run")."""
     data = json.loads(text)
+    if _is_lm_eval(data):
+        return read_lm_eval(data, name)
     if isinstance(data, dict):
         for key in ("runs", "results", "experiments", "data"):
             if isinstance(data.get(key), list):
@@ -126,6 +128,53 @@ def read_json(text: str, name: str = "") -> list[Run]:
     if not isinstance(data, list):
         raise ValueError(f"{name}: no runs in it (a list of objects, or an object of them)")
     return [_split(_flat(item), f"{name}:{i}") for i, item in enumerate(data, start=1) if isinstance(item, dict)]
+
+
+def _is_lm_eval(data: object) -> bool:
+    """Whether a JSON document is lm-evaluation-harness's results file: "results" by task, and its bookkeeping."""
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("results"), dict)
+        and bool(data["results"])
+        and all(isinstance(v, dict) for v in data["results"].values())
+        and any(k in data for k in ("versions", "n-shot", "configs", "config"))
+    )
+
+
+def read_lm_eval(data: dict[str, object], name: str = "") -> list[Run]:
+    """Runs from an lm-evaluation-harness results file: one run per task, with the fields "model" and "task" (and
+    "seed" when the harness recorded one); each metric under its name ("acc", "exact_match"; with its filter when it
+    is not "none": "exact_match (strict-match)"). The standard errors (``acc_stderr``) are left out.
+
+    >>> runs = read_lm_eval({"results": {"arc": {"acc,none": 0.5, "acc_stderr,none": 0.01, "alias": "arc"}},
+    ...                      "versions": {}, "model_name": "m"})
+    >>> runs[0].fields, runs[0].metrics
+    ({'model': 'm', 'task': 'arc'}, {'acc': 0.5})
+    """
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    assert isinstance(config, dict)
+    model = str(data.get("model_name") or "")
+    if not model:
+        args = str(config.get("model_args") or "")
+        found = re.search(r"(?:pretrained|model|engine)=([^,]+)", args)
+        model = found.group(1) if found else str(config.get("model") or Path(name).stem)
+    seed = config.get("random_seed")
+    runs = []
+    results = data["results"]
+    assert isinstance(results, dict)
+    for task, values in results.items():
+        run = Run({"model": model, "task": str(task)}, source=f"{name}:{task}")
+        if isinstance(seed, int) and not isinstance(seed, bool):
+            run.fields["seed"] = str(seed)
+        for key, value in values.items():
+            metric, _, how = str(key).partition(",")
+            if metric.endswith("_stderr") or metric == "alias" or isinstance(value, bool) or not isinstance(value, (int, float)):
+                continue
+            if math.isfinite(value):
+                run.metrics[metric if how in ("", "none") else f"{metric} ({how})"] = float(value)
+        if run.metrics:
+            runs.append(run)
+    return runs
 
 
 def read_jsonl(text: str, name: str = "") -> list[Run]:
