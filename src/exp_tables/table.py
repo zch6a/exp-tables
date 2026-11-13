@@ -9,6 +9,7 @@ import re
 from dataclasses import dataclass, field
 
 from .data import SEED, Run
+from .significance import Result, benjamini_hochberg, bootstrap, cliffs_delta, hedges_g, holm, paired, seeds_needed, welch, wilcoxon
 from .stats import Summary
 
 LOWER = re.compile(
@@ -52,13 +53,41 @@ class Spec:
     spread: str = "std"  # "std", "sem", "ci" (95%) or "none"
     decimals: dict[str, int] = field(default_factory=dict)  # metric -> decimals (else from its spread)
     labels: dict[str, str] = field(default_factory=dict)  # a metric, field value or field name -> how the table prints it
+    test: str = "auto"  # "auto" (paired t when the seeds pair up, else Welch's), "welch", "paired", "wilcoxon", "bootstrap", "none"
+    alpha: float = 0.05
+    correction: str = "holm"  # "holm", "bh" or "none": for the comparisons of a column taken together
 
 
 @dataclass
 class Cell:
     summary: Summary | None
-    best: bool = False
+    best: bool = False  # the best, or not significantly different from it
     second: bool = False
+    seeds: list[str] = field(default_factory=list)  # each value's seed, in order
+    tied: bool = False  # marked best because it is not significantly different from the best
+
+
+@dataclass
+class Comparison:
+    """The best of a column against another row."""
+
+    group: str
+    metric: str
+    best: str
+    other: str
+    difference: float  # best minus other, in the metric's units
+    test: str
+    p: float
+    p_adjusted: float
+    hedges_g: float
+    cliffs_delta: float
+    seeds: tuple[int, int]
+    seeds_needed: int | None  # per method, for a difference of this size to be found (power 0.8)
+    alpha: float = 0.05
+
+    @property
+    def significant(self) -> bool:
+        return self.p_adjusted < self.alpha
 
 
 @dataclass
@@ -72,6 +101,8 @@ class Table:
     decimals: list[int]
     spread: str
     labels: dict[str, str] = field(default_factory=dict)
+    comparisons: list[Comparison] = field(default_factory=list)
+    test: str = "none"
 
 
 def _varying(runs: list[Run], name: str) -> bool:
@@ -91,7 +122,7 @@ def resolve(runs: list[Run], spec: Spec) -> Spec:
         rows = next(([n] for n in varying if n not in ids), [])
     columns = spec.columns or [n for n in varying if n not in rows and n not in ids and not n.lower().startswith(("config/", "params/"))][:1]
     metrics = spec.metrics or list(dict.fromkeys(m for r in runs for m in r.metrics))
-    return Spec(rows, columns, metrics, seed, spec.better, spec.spread, spec.decimals, spec.labels)
+    return Spec(rows, columns, metrics, seed, spec.better, spec.spread, spec.decimals, spec.labels, spec.test, spec.alpha, spec.correction)
 
 
 def _auto_decimals(summaries: list[Summary]) -> int:
@@ -110,12 +141,17 @@ def build(runs: list[Run], spec: Spec | None = None) -> Table:
     row_keys = list(dict.fromkeys(key(r, spec.rows) for r in runs))
     group_keys = list(dict.fromkeys(key(r, spec.columns) for r in runs)) if spec.columns else [""]
     values: dict[tuple[str, str, str], list[float]] = {}
+    seeds: dict[tuple[str, str, str], list[str]] = {}
     for r in runs:
         for m in spec.metrics:
             if m in r.metrics:
-                values.setdefault((key(r, spec.rows), key(r, spec.columns) if spec.columns else "", m), []).append(r.metrics[m])
+                k = (key(r, spec.rows), key(r, spec.columns) if spec.columns else "", m)
+                values.setdefault(k, []).append(r.metrics[m])
+                seeds.setdefault(k, []).append(r.fields.get(spec.seed, ""))
     columns = [(g, m) for g in group_keys for m in spec.metrics if any((rk, g, m) in values for rk in row_keys)]
-    cells = [[Cell(Summary(values[(rk, g, m)]) if (rk, g, m) in values else None) for g, m in columns] for rk in row_keys]
+    cells = [
+        [Cell(Summary(values[(rk, g, m)]), seeds=seeds[(rk, g, m)]) if (rk, g, m) in values else Cell(None) for g, m in columns] for rk in row_keys
+    ]
     directions = [spec.better.get(m) or direction(m) for _, m in columns]
     decimals = []
     for j, (_, m) in enumerate(columns):
@@ -128,11 +164,92 @@ def build(runs: list[Run], spec: Spec | None = None) -> Table:
         for row in cells:
             c = row[j]
             if c.summary is not None and ranked:
-                shown = round(c.summary.mean, decimals[j])
-                c.best = shown == ranked[0]  # equal as printed: both are the best
-                c.second = len(ranked) > 2 and shown == ranked[1]  # a second best only among three or more
-    title = " / ".join(spec.labels.get(n, n) for n in spec.rows)
-    return Table(row_keys, title, [g for g, _ in columns], [m for _, m in columns], cells, directions, decimals, spec.spread, spec.labels)
+                c.best = round(c.summary.mean, decimals[j]) == ranked[0]  # equal as printed: both are the best
+    table = Table(row_keys, " / ".join(spec.labels.get(n, n) for n in spec.rows), [g for g, _ in columns], [m for _, m in columns], cells,
+                  directions, decimals, spec.spread, spec.labels, test=spec.test)  # fmt: skip
+    if spec.test != "none":
+        _significance(table, spec)
+    for j in range(len(columns)):  # the second best: after a single best (with several marked best, the next is third), among three or more
+        rest = [row[j] for row in cells if row[j].summary is not None and not row[j].best]
+        single_best = sum(row[j].best for row in cells) == 1
+        if directions[j] in ("higher", "lower") and single_best and len([row[j] for row in cells if row[j].summary is not None]) > 2 and rest:
+            sign = 1 if directions[j] == "higher" else -1
+            top = max(round(sign * c.summary.mean, decimals[j]) for c in rest if c.summary is not None)
+            for c in rest:
+                c.second = c.summary is not None and round(sign * c.summary.mean, decimals[j]) == top
+    return table
+
+
+def _pairs(a: Cell, b: Cell) -> bool:
+    """Whether two cells have values for the same seeds, each seed once."""
+    return bool(a.seeds) and all(a.seeds) and sorted(a.seeds) == sorted(b.seeds) and len(set(a.seeds)) == len(a.seeds)
+
+
+def _needed(a: Cell, b: Cell, r: Result, alpha: float) -> int | None:
+    """Seeds needed, the way the test went: paired values by their differences."""
+    assert a.summary is not None and b.summary is not None
+    if r.name in ("paired t", "Wilcoxon"):
+        order = dict(zip(b.seeds, b.summary.values, strict=True))
+        return seeds_needed(a.summary.values, [order[s] for s in a.seeds], alpha, paired=True)
+    return seeds_needed(a.summary.values, b.summary.values, alpha)
+
+
+def _test(spec_test: str, a: Cell, b: Cell) -> Result:
+    """The test of two cells' values: paired when asked, or (auto) when both have the same seeds."""
+    assert a.summary is not None and b.summary is not None
+    x, y = a.summary.values, b.summary.values
+    pairs = _pairs(a, b)
+    if pairs:  # put b's values in a's seed order
+        order = {s: v for s, v in zip(b.seeds, y, strict=True)}
+        y_paired = [order[s] for s in a.seeds]
+    if spec_test == "bootstrap":
+        return bootstrap(x, y)
+    if spec_test == "wilcoxon" and pairs:
+        return wilcoxon(x, y_paired)
+    if spec_test in ("paired", "auto") and pairs:
+        return paired(x, y_paired)
+    return welch(x, y)
+
+
+def _significance(table: Table, spec: Spec) -> None:
+    """Each column's best against the other rows (with two or more seeds each); the p values of a column corrected
+    together; the rows not significantly different from the best marked best as well (tied)."""
+    for j, way in enumerate(table.directions):
+        if way not in ("higher", "lower"):
+            continue
+        column = [(table.rows[i], row[j]) for i, row in enumerate(table.cells) if row[j].summary is not None]
+        leaders = [(name, c) for name, c in column if c.best]
+        if not leaders:
+            continue
+        sign = 1 if way == "higher" else -1
+        best_name, best = max(leaders, key=lambda nc: sign * nc[1].summary.mean)  # type: ignore[union-attr]
+        others = [(name, c) for name, c in column if c is not best and c.summary is not None and c.summary.n >= 2]
+        if best.summary is None or best.summary.n < 2 or not others:
+            continue
+        results = [_test(spec.test, best, c) for _, c in others]
+        ps = [r.p for r in results]
+        adjusted = holm(ps) if spec.correction == "holm" else benjamini_hochberg(ps) if spec.correction == "bh" else ps
+        for (name, c), r, p_adj in zip(others, results, adjusted, strict=True):
+            assert c.summary is not None
+            if p_adj >= spec.alpha and not c.best:
+                c.best, c.tied = True, True
+            table.comparisons.append(
+                Comparison(
+                    table.groups[j],
+                    table.metrics[j],
+                    best_name,
+                    name,
+                    best.summary.mean - c.summary.mean,
+                    r.name,
+                    r.p,
+                    p_adj,
+                    hedges_g(best.summary.values, c.summary.values),
+                    cliffs_delta(best.summary.values, c.summary.values),
+                    (best.summary.n, c.summary.n),
+                    _needed(best, c, r, spec.alpha),
+                    spec.alpha,
+                )  # fmt: skip
+            )
 
 
 # ---------------------------------------------------------------- LaTeX
