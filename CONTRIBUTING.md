@@ -20,11 +20,18 @@ numerical integration), and says where the value comes from. The example is made
 
 | | |
 |---|---|
-| `data.py` | reading CSV/TSV, JSON, JSON Lines, MLflow into runs |
+| `__init__.py` | the Python API (`read`, `build`, `Spec`, `latex`, `markdown`, `html`, `comparisons`) |
+| `data.py` | reading CSV/TSV, JSON, JSON Lines, MLflow, lm-evaluation-harness results into runs (fields, metrics, errors) |
 | `tensorboard.py` | TensorBoard event files (TFRecord, protobuf) |
 | `stats.py` | summaries over seeds, Student's t distribution |
-| `significance.py` | tests, corrections, effect sizes, seeds needed |
-| `table.py` | the table: layout, marks, significance per column; LaTeX |
-| `render.py` | Markdown and HTML |
+| `significance.py` | tests (t, Wilcoxon, bootstrap, z on standard errors), corrections, effect sizes, seeds needed |
+| `table.py` | the table: layout worked out, spec checks, standard errors, marks and tests per column, notes; LaTeX |
+| `render.py` | Markdown and HTML, the legend |
 | `report.py` | the comparisons in words |
-| `cli.py` | the command line, the config file, JSON |
+| `cli.py` | the command line, filters, several inputs, the config file, `--check`, JSON |
+| `action.yml` | the GitHub Action around `--check` |
+| `scripts/` | the example's data, the demo image, the social card |
+
+The tests are by round: `test_real_shapes.py`, `test_round2.py`, `test_round3.py` rebuild shapes seen in public
+results files; `test_review_round1.py` and `test_review_round2.py` hold one test per defect an independent review
+found.

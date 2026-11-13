@@ -2,10 +2,11 @@
 
 # exp-tables
 
-**Your results, as the table your paper needs, and only as good as they really are.** exp-tables reads your runs
-(CSV, JSON, a wandb export, TensorBoard logs, MLflow, lm-evaluation-harness results), averages every metric over seeds with its spread, tests each
-method against the best of its column, and writes the booktabs LaTeX (or Markdown, or HTML) table with the best
-in bold — every method the seeds cannot tell apart from the best, not just the one with the highest mean.
+**Your results, as the table your paper needs: bold only where your seeds support it.** exp-tables reads your
+runs (CSV, a wandb export, JSON, TensorBoard logs, MLflow, lm-evaluation-harness results), averages each metric over
+seeds, tests every method against the best of its column, and writes booktabs LaTeX, Markdown or HTML. Bold is the
+best and every method the seeds cannot tell apart from it; and in CI, it says when the table in your paper no
+longer matches your results.
 
 <a href="https://github.com/zch6a/exp-tables/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/zch6a/exp-tables/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue">

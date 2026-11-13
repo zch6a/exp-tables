@@ -1,12 +1,12 @@
 [project]
 name = "exp-tables"
 version = "0.1.0"
-description = "Experiment results to paper tables, honestly: runs from CSV, JSON, MLflow, TensorBoard or wandb; means over seeds with their spread; significance tests and effect sizes; booktabs LaTeX, Markdown and HTML with the best marked only where it really is."
+description = "Experiment results to paper tables, honestly: runs from CSV, wandb, JSON, TensorBoard, MLflow or lm-evaluation-harness; means over seeds with their spread; significance tests and effect sizes; booktabs LaTeX, Markdown and HTML with the best marked only where the seeds support it; a check that the paper's tables still match."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [{ name = "zch6a" }]
-keywords = ["latex", "booktabs", "tables", "experiments", "seeds", "significance", "statistics", "research", "reproducibility"]
+keywords = ["latex", "booktabs", "tables", "experiments", "seeds", "significance", "statistics", "research", "reproducibility", "tensorboard", "mlflow", "wandb", "lm-evaluation-harness"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
@@ -14,6 +14,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering",
     "Topic :: Text Processing :: Markup :: LaTeX",
+    "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 # No dependencies: the statistics (t and Wilcoxon tests, bootstrap, corrections) are written out in the standard
 # library, so the tool installs anywhere a paper is written.
@@ -22,6 +24,7 @@ dependencies = []
 [project.urls]
 Homepage = "https://github.com/zch6a/exp-tables"
 Issues = "https://github.com/zch6a/exp-tables/issues"
+Changelog = "https://github.com/zch6a/exp-tables/blob/main/CHANGELOG.md"
 
 [project.scripts]
 exp-tables = "exp_tables.cli:main"
@@ -34,7 +37,7 @@ build-backend = "hatchling.build"
 packages = ["src/exp_tables"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["docs/social-preview.png"]
+exclude = ["docs/"]  # images for the GitHub page only
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.6", "mypy>=1.10"]

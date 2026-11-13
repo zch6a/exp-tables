@@ -2,9 +2,9 @@
 
 # exp-tables
 
-**把你的实验结果变成论文需要的表格，而且只说结果真正支持的话。** exp-tables 读取你的运行记录（CSV、JSON、wandb 导出、TensorBoard 日志、MLflow、lm-evaluation-harness 结果），
-对每个指标跨种子求均值和波动，把每个方法和该列最佳的方法做显著性检验，然后写出 booktabs LaTeX（或 Markdown、HTML）表格：
-加粗的是最佳，以及所有种子无法与最佳区分开的方法，而不只是均值最高的那一个。
+**把实验结果变成论文需要的表格：只有种子支持的才加粗。** exp-tables 读取你的运行记录（CSV、wandb 导出、JSON、TensorBoard 日志、
+MLflow、lm-evaluation-harness 结果），对每个指标跨种子求均值，把每个方法和该列最佳的方法做显著性检验，写出 booktabs LaTeX、Markdown 或 HTML。
+加粗的是最佳，以及种子无法与它区分开的所有方法；放进 CI 后，论文里的表和结果对不上时它会告诉你。
 
 <a href="https://github.com/zch6a/exp-tables/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/zch6a/exp-tables/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue">
