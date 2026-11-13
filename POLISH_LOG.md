@@ -124,3 +124,13 @@ Tests: 55, Python 3.10 and 3.13; ruff, mypy clean.
 
 Next: the public repository and CI; then five polishing rounds (independent reviews, real public result data),
 then v0.1.0.
+
+### 2026-11-13 — public
+
+- Checked before publishing: commits by zch6a with the noreply address only, no attribution lines, no personal paths
+  or names in the tree.
+- https://github.com/zch6a/exp-tables (public, main), with a description and topics. The first CI run is green:
+  three systems × Python 3.10/3.13, and the action job (the example matches; after one number is changed it does not,
+  with `matches=false`).
+
+Next: polishing round 1.
