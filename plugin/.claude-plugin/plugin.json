@@ -1,0 +1,10 @@
+{
+  "name": "exp-tables",
+  "description": "Experiment results to paper tables, honestly: runs from CSV, JSON, MLflow, TensorBoard or wandb; means over seeds with their spread; significance tests; booktabs LaTeX, Markdown and HTML with the best marked only where the seeds support it.",
+  "version": "0.1.0",
+  "author": { "name": "zch6a" },
+  "homepage": "https://github.com/zch6a/exp-tables",
+  "repository": "https://github.com/zch6a/exp-tables",
+  "license": "MIT",
+  "keywords": ["research", "latex", "booktabs", "tables", "experiments", "seeds", "significance", "claude-code"]
+}

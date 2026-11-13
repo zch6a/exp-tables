@@ -3,6 +3,8 @@ before and after the correction, the effect sizes, and how many seeds a differen
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .table import Comparison, Table
 
 
@@ -38,4 +40,9 @@ def comparisons(t: Table) -> str:
     if not t.comparisons:
         return "No comparisons: a column needs a best and another row with two or more seeds each, and a known direction.\n"
     decimals = {(g, m): d for g, m, d in zip(t.groups, t.metrics, t.decimals, strict=True)}
-    return "\n".join(comparison_line(c, decimals.get((c.group, c.metric), 2)) for c in t.comparisons) + "\n"
+    shown = lambda s: t.labels.get(s) or s  # noqa: E731  # as the table prints it
+    lines = []
+    for c in t.comparisons:
+        labelled = replace(c, group=shown(c.group), metric=shown(c.metric), best=shown(c.best), other=shown(c.other))
+        lines.append(comparison_line(labelled, decimals.get((c.group, c.metric), 2)))
+    return "\n".join(lines) + "\n"

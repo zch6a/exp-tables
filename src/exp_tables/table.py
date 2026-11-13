@@ -14,7 +14,7 @@ from .stats import Summary
 
 LOWER = re.compile(
     r"\b(?:loss|err(?:or)?s?|perplexity|ppl|fid|kid|wer|cer|ter|mse|mae|rmse|nll|bpd|bpc|eer|latency|time|runtime|seconds?|ms|"
-    r"params?|parameters|flops|macs|memory|mem|cost|distance|regret|lpips|chamfer)\b",
+    r"params?|parameters|flops|macs|memory|mem|cost|distance|regret|lpips|chamfer|ece|mce|brier|calibration)\b",
     re.I,
 )
 HIGHER = re.compile(

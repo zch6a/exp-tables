@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- The repository's social preview (1280×640): docs/social-preview.png, rendered from this page with headless Chrome
+     (chrome --headless --screenshot --window-size=1280,640). The table and report are exp-tables' own output on
+     examples/results.csv (made-up results), CIFAR-100 only. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; }
+  body { background: radial-gradient(1100px 700px at 12% 8%, #10261c 0%, #12141a 55%, #0b0d11 100%); color: #e6edf3;
+    font-family: "Segoe UI", -apple-system, system-ui, sans-serif; display: grid; grid-template-columns: 420px 1fr; gap: 40px;
+    padding: 0 52px 0 70px; box-sizing: border-box; align-items: center; }
+  h1 { font-size: 64px; margin: 0 0 16px; letter-spacing: -1.5px; }
+  h1 span { color: #7ee787; }
+  .tag { font-size: 32px; line-height: 1.22; margin: 0 0 22px; font-weight: 600; }
+  .sub { font-size: 18.5px; line-height: 1.5; color: #b1bac4; margin: 0 0 26px; }
+  .pills { display: flex; gap: 9px; flex-wrap: wrap; }
+  .pills span { font-size: 14.5px; border: 1px solid #30363d; background: #161b22; border-radius: 999px; padding: 6px 12px; color: #c9d1d9; }
+  .term { background: #0d1117; border: 1px solid #30363d; border-radius: 12px; box-shadow: 0 26px 70px rgba(0,0,0,.55); overflow: hidden; }
+  .bar { display: flex; gap: 7px; align-items: center; padding: 11px 14px; background: #161b22; border-bottom: 1px solid #30363d; }
+  .bar i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .bar b { margin-left: 10px; font: 600 13px "Segoe UI", sans-serif; color: #8b949e; }
+  .body { padding: 16px 20px 18px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: 16px; }
+  th, td { padding: 7px 10px; text-align: right; border-bottom: 1px solid #21262d; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #8b949e; font-weight: 600; font-size: 14.5px; border-bottom: 1px solid #484f58; }
+  td b { color: #e6edf3; } td small { color: #6e7681; font-size: 12.5px; } td { color: #b1bac4; }
+  u { text-decoration-color: #8b949e; }
+  .cap { font-size: 12.5px; color: #8b949e; margin: 9px 0 14px; }
+  pre { margin: 0; font: 12.8px/1.6 Consolas, "Cascadia Mono", ui-monospace, monospace; color: #c9d1d9; white-space: pre-wrap; }
+  .p { color: #7ee787; } .ok { color: #7ee787; } .noise { color: #e3b341; } .n { color: #8b949e; }
+</style>
+</head>
+<body>
+  <div>
+    <h1>exp-<span>tables</span></h1>
+    <p class="tag">Bold only what<br>your seeds support.</p>
+    <p class="sub">Runs to the paper's table: mean ± spread over seeds, each method tested against the column's best, and every method the seeds cannot tell apart from it in bold.</p>
+    <div class="pills"><span>CSV · wandb · TensorBoard · MLflow</span><span>booktabs LaTeX</span><span>GitHub Action</span><span>No dependencies</span></div>
+  </div>
+  <div class="term">
+    <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><b>exp-tables results.csv --report</b></div>
+    <div class="body">
+      <table>
+        <thead><tr><th>Method</th><th>CIFAR-100 · Accuracy (%) ↑</th><th>CIFAR-100 · ECE (%) ↓</th></tr></thead>
+        <tbody>
+          <tr><td>TinyNet (ours)</td><td><b>75.71</b> <small>± 0.52</small></td><td><b>5.16</b> <small>± 0.35</small></td></tr>
+          <tr><td>ResNet-18</td><td>73.99 <small>± 0.30</small></td><td>8.05 <small>± 0.30</small></td></tr>
+          <tr><td>ViT-S</td><td><b>75.58</b> <small>± 0.46</small></td><td>5.95 <small>± 0.24</small></td></tr>
+          <tr><td>TinyNet w/o attention</td><td><b>74.85</b> <small>± 0.72</small></td><td><u>5.68</u> <small>± 0.22</small></td></tr>
+        </tbody>
+      </table>
+      <p class="cap">bold: the best, and any not significantly different from it (paired t, α = 0.05, Holm per column)</p>
+<pre><span class="n">Accuracy:</span> ours vs ViT-S +0.13 (paired t, p = 0.632; Hedges g 0.24):
+  <span class="noise">within the noise</span>; about 256 seeds each would tell
+<span class="n">Accuracy:</span> ours vs ResNet-18 +1.72 (paired t, corrected p = 0.025): <span class="ok">significant</span>
+<span class="n">ECE:</span> ours vs ResNet-18 -2.89 (paired t, corrected p &lt; 0.001): <span class="ok">significant</span></pre>
+    </div>
+  </div>
+</body>
+</html>

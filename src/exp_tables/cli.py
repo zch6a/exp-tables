@@ -10,6 +10,7 @@ exp-tables results.csv --save-config table.json   then: exp-tables --config tabl
 from __future__ import annotations
 
 import argparse
+import difflib
 import json
 import os
 import sys
@@ -147,6 +148,23 @@ def read_config(path: Path) -> dict[str, Any]:
     return data
 
 
+def _check(path: Path, text: str) -> int:
+    """The table made now against the one in `path`: 0 when they are the same (line endings and trailing spaces aside),
+    1 with the lines that differ."""
+    try:
+        committed = path.read_text(encoding="utf-8-sig")
+    except OSError as e:
+        print(f"exp-tables: {path}: {e.strerror or e}", file=sys.stderr)
+        return 2
+    norm = lambda t: [line.rstrip() for line in t.strip().splitlines()]  # noqa: E731
+    if norm(committed) == norm(text):
+        print(f"exp-tables: {path} matches the results")
+        return 0
+    diff = difflib.unified_diff(norm(committed), norm(text), f"{path} (in the paper)", "made from the results", lineterm="")
+    print(f"exp-tables: {path} does not match the results:", *diff, sep="\n")
+    return 1
+
+
 def _write(output: Path | None, text: str) -> None:
     if output is None:
         sys.stdout.write(text)
@@ -170,7 +188,7 @@ def _main(argv: list[str] | None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(prog="exp-tables", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
-                                 epilog="exit status: 0 done, 2 when it could not make the table")  # fmt: skip
+                                 epilog="exit status: 0 done, 1 when --check finds a difference, 2 when it could not make the table")  # fmt: skip
     ap.add_argument("inputs", nargs="*", type=Path, metavar="INPUT", help="CSV, TSV, JSON or JSONL files, TensorBoard log folders, mlruns folders")
     ap.add_argument("--rows", help="the field(s) naming a row, comma-separated (default: method, model, … or the first that varies)")
     ap.add_argument("--columns", help="the field(s) grouping columns (default: another field that varies)")
@@ -192,6 +210,9 @@ def _main(argv: list[str] | None) -> int:
     ap.add_argument("-o", "--output", type=Path, help="write the table to this file")
     ap.add_argument("--config", type=Path, help="make the table a config file describes (options given here override it)")
     ap.add_argument("--save-config", type=Path, metavar="FILE", help="write a config that makes this table again")
+    ap.add_argument(
+        "--check", type=Path, metavar="FILE", help="compare with the table in FILE (e.g. the one in the paper): exit 1 and show the lines that differ"
+    )
     ap.add_argument("--version", action="version", version=f"exp-tables {__version__}")
     args = ap.parse_args(argv)
 
@@ -233,6 +254,8 @@ def _main(argv: list[str] | None) -> int:
 
     out = {"latex": latex, "markdown": render.markdown, "html": render.html}.get(fmt)
     text = out(table) if out else json.dumps(to_json(table), indent=2, ensure_ascii=False) + "\n"
+    if args.check:
+        return _check(args.check, text)
     _write(args.output, text)
     if args.report:
         (sys.stdout if args.output else sys.stderr).write(comparisons(table))

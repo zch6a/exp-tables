@@ -95,3 +95,32 @@ Tests: 53, Python 3.10 and 3.14; ruff, mypy clean.
 
 Next: README (English, Chinese) with example data, CI, the GitHub Action, the Skill, a demo image; then the release
 checks and the five polishing rounds.
+
+### 2026-11-13 — --check, the example, the Action, the docs
+
+- **`--check FILE`**: makes the table and compares it with a committed one; exit 0 when they match, 1 with a unified
+  diff of the lines that differ, 2 when the file cannot be read. The epilog lists the exit statuses.
+- **The example**: `scripts/make_example.py` writes `examples/results.csv` from a seeded generator (made-up results
+  of a made-up paper: four methods, CIFAR-10/100, five seeds, accuracy and ECE), with `examples/table.json` (the
+  config, labels included) and `examples/table.tex` (the table it makes). A test checks that the committed table
+  still matches, so the example cannot drift from the code.
+- **GitHub Action** (`action.yml`): `config` and `table` in, `matches` out; runs `exp-tables --config ... --check`;
+  the job summary gets the diff, the Markdown table and the report; `fail: false` to only report. CI runs it on
+  the example (matches) and on a copy with one number changed (does not match, with `fail: false`).
+- **CI** on three systems with Python 3.10 and 3.13; **release workflow** copied from arxiv-diff (the fixed one
+  that handles lightweight tags), publishing in a job that runs no project code.
+- **Skill** (`plugin/`), SECURITY (no network at all), CONTRIBUTING (a module map), CHANGELOG, READMEs in English
+  and Chinese with the example's real table and report, `docs/demo.png` (rendered from exp-tables' own HTML with
+  headless Chrome, no network) and `docs/social-preview.png` (from `scripts/social-card.html`).
+- Found while writing the docs:
+  - ECE had no direction (no arrow, no test): `ece`, `mce`, `brier`, `calibration` are now lower-is-better.
+  - The report printed raw names (`cifar100 · accuracy`) beside a table with labels; it now uses the labels.
+  - HTML group headers were right-aligned over their columns; now centred.
+  - The example shows the point of the tool: on CIFAR-10 ECE, ViT-S (2.61 ± 0.52) is bold and the ablation
+    (2.60 ± 0.21) is not, because bold means "not significantly worse" and only the ablation's seeds show it is
+    worse. The READMEs explain this instead of hiding it.
+
+Tests: 55, Python 3.10 and 3.13; ruff, mypy clean.
+
+Next: the public repository and CI; then five polishing rounds (independent reviews, real public result data),
+then v0.1.0.

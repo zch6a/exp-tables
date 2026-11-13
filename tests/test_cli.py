@@ -91,3 +91,21 @@ def test_a_config_makes_the_same_table_again(results: Path, tmp_path: Path, caps
     assert code == 0 and again == first
     code, latex, _ = run(["--config", config, "--format", "latex"], capsys)  # an option given overrides the config
     assert latex.startswith("\\begin{tabular}")
+
+
+def test_check_the_committed_table(results: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    committed = tmp_path / "table.tex"
+    assert main([str(results), "-o", str(committed)]) == 0
+    capsys.readouterr()
+    assert main([str(results), "--check", str(committed)]) == 0
+    assert "matches the results" in capsys.readouterr().out
+    committed.write_text(committed.read_text(encoding="utf-8").replace("93.10", "93.40") + "  \n", encoding="utf-8")
+    assert main([str(results), "--check", str(committed)]) == 1
+    out = capsys.readouterr().out
+    assert "does not match the results" in out and "-ours & \\textbf{93.40}" in out and "+ours & \\textbf{93.10}" in out
+    assert main([str(results), "--check", str(tmp_path / "none.tex")]) == 2
+
+
+def test_the_example_matches_its_results(capsys: pytest.CaptureFixture[str]) -> None:
+    examples = Path(__file__).parent.parent / "examples"
+    assert main(["--config", str(examples / "table.json"), "--check", str(examples / "table.tex")]) == 0

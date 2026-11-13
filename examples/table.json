@@ -1,0 +1,33 @@
+{
+  "tool": "exp-tables",
+  "tool_version": "0.1.0",
+  "inputs": [
+    "results.csv"
+  ],
+  "filters": {},
+  "format": "latex",
+  "spec": {
+    "rows": [
+      "method"
+    ],
+    "columns": [
+      "dataset"
+    ],
+    "metrics": [
+      "accuracy",
+      "ece"
+    ],
+    "seed": "seed",
+    "better": {},
+    "spread": "std",
+    "decimals": {},
+    "labels": {
+      "accuracy": "Accuracy (%)",
+      "ece": "ECE (%)",
+      "method": "Method"
+    },
+    "test": "auto",
+    "alpha": 0.05,
+    "correction": "holm"
+  }
+}

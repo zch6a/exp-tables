@@ -1,0 +1,62 @@
+name: exp-tables
+description: The tables in your paper still match your results. Remakes each table from its results and config, and fails when the committed table differs.
+author: zch6a
+branding:
+  icon: grid
+  color: green
+inputs:
+  config:
+    description: The table's config file (made with exp-tables --save-config), relative to the repository
+    required: true
+  table:
+    description: The committed table to compare with (the .tex, .md or .html file the paper includes)
+    required: true
+  format:
+    description: 'The table''s format, when it is not the config''s: latex, markdown, html'
+    default: ""
+  fail:
+    description: '"true" (default): fail the job when the table does not match; "false": only report'
+    default: "true"
+outputs:
+  matches:
+    description: '"true" when the committed table matches the results'
+    value: ${{ steps.run.outputs.matches }}
+runs:
+  using: composite
+  steps:
+    # The tool at this action's own ref; the repository's results are read, nothing in it is run.
+    - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3; it has no moving major tag
+    - id: run
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+        TABLE: ${{ inputs.table }}
+        FORMAT: ${{ inputs.format }}
+        FAIL: ${{ inputs.fail }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |
+        args=(--config "$CONFIG")
+        [ -n "$FORMAT" ] && args+=("--format=$FORMAT")
+        set +e
+        out="$(uvx --from "$ACTION_PATH" exp-tables "${args[@]}" --check "$TABLE")"
+        code=$?
+        set -e
+        {
+          echo "### exp-tables: \`$TABLE\`"
+          echo
+          echo '```diff'
+          echo "$out"
+          echo '```'
+          echo
+          uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --format markdown
+          echo
+          echo '<details><summary>What the marks rest on</summary>'
+          echo
+          echo '```text'
+          uvx --from "$ACTION_PATH" exp-tables --config "$CONFIG" --report -o /dev/null
+          echo '```'
+          echo '</details>'
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "$out"
+        if [ "$code" -eq 0 ]; then echo "matches=true" >> "$GITHUB_OUTPUT"; else echo "matches=false" >> "$GITHUB_OUTPUT"; fi
+        if [ "$code" -eq 2 ] || { [ "$code" -ne 0 ] && [ "$FAIL" = "true" ]; }; then exit "$code"; fi

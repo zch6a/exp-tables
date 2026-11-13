@@ -1,0 +1,12 @@
+\begin{tabular}{lrrrr}
+\toprule
+ & \multicolumn{2}{c}{CIFAR-10} & \multicolumn{2}{c}{CIFAR-100} \\
+\cmidrule(lr){2-3} \cmidrule(lr){4-5}
+Method & Accuracy (\%) $\uparrow$ & ECE (\%) $\downarrow$ & Accuracy (\%) $\uparrow$ & ECE (\%) $\downarrow$ \\
+\midrule
+TinyNet (ours) & \textbf{94.06}\,{\scriptsize$\pm$0.18} & \textbf{2.06}\,{\scriptsize$\pm$0.17} & \textbf{75.71}\,{\scriptsize$\pm$0.52} & \textbf{5.16}\,{\scriptsize$\pm$0.35} \\
+ResNet-18 & 93.18\,{\scriptsize$\pm$0.22} & 3.41\,{\scriptsize$\pm$0.36} & 73.99\,{\scriptsize$\pm$0.30} & 8.05\,{\scriptsize$\pm$0.30} \\
+ViT-S & \textbf{93.74}\,{\scriptsize$\pm$0.31} & \textbf{2.61}\,{\scriptsize$\pm$0.52} & \textbf{75.58}\,{\scriptsize$\pm$0.46} & 5.95\,{\scriptsize$\pm$0.24} \\
+TinyNet w/o attention & 93.29\,{\scriptsize$\pm$0.14} & 2.60\,{\scriptsize$\pm$0.21} & \textbf{74.85}\,{\scriptsize$\pm$0.72} & \underline{5.68}\,{\scriptsize$\pm$0.22} \\
+\bottomrule
+\end{tabular}

@@ -70,7 +70,7 @@ def html(t: Table) -> str:
                 spans[-1] = (g, spans[-1][1] + 1)
             else:
                 spans.append((g, 1))
-        out.append("<tr><th></th>" + "".join(f'<th colspan="{n}">{e(g)}</th>' for g, n in spans) + "</tr>")
+        out.append("<tr><th></th>" + "".join(f'<th colspan="{n}" style="text-align: center">{e(g)}</th>' for g, n in spans) + "</tr>")
     out.append(
         f"<tr><th>{e(t.row_title)}</th>"
         + "".join(f"<th>{e(m)}{ARROWS.get(d, '')}</th>" for m, d in zip(t.metrics, t.directions, strict=True))

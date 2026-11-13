@@ -1,0 +1,41 @@
+method,dataset,seed,accuracy,ece
+TinyNet (ours),CIFAR-10,0,94.23,2.26
+TinyNet (ours),CIFAR-10,1,93.80,2.07
+TinyNet (ours),CIFAR-10,2,94.19,2.19
+TinyNet (ours),CIFAR-10,3,93.95,1.95
+TinyNet (ours),CIFAR-10,4,94.14,1.85
+ResNet-18,CIFAR-10,0,93.16,2.98
+ResNet-18,CIFAR-10,1,93.20,3.07
+ResNet-18,CIFAR-10,2,93.22,3.74
+ResNet-18,CIFAR-10,3,93.48,3.70
+ResNet-18,CIFAR-10,4,92.85,3.54
+ViT-S,CIFAR-10,0,93.45,2.48
+ViT-S,CIFAR-10,1,93.65,3.12
+ViT-S,CIFAR-10,2,94.17,2.81
+ViT-S,CIFAR-10,3,93.94,1.77
+ViT-S,CIFAR-10,4,93.50,2.89
+TinyNet w/o attention,CIFAR-10,0,93.16,2.82
+TinyNet w/o attention,CIFAR-10,1,93.24,2.81
+TinyNet w/o attention,CIFAR-10,2,93.52,2.38
+TinyNet w/o attention,CIFAR-10,3,93.26,2.58
+TinyNet w/o attention,CIFAR-10,4,93.25,2.42
+TinyNet (ours),CIFAR-100,0,75.60,5.39
+TinyNet (ours),CIFAR-100,1,75.55,4.96
+TinyNet (ours),CIFAR-100,2,76.40,5.52
+TinyNet (ours),CIFAR-100,3,76.00,4.66
+TinyNet (ours),CIFAR-100,4,75.00,5.25
+ResNet-18,CIFAR-100,0,73.78,8.42
+ResNet-18,CIFAR-100,1,74.21,7.64
+ResNet-18,CIFAR-100,2,73.71,7.89
+ResNet-18,CIFAR-100,3,73.83,8.16
+ResNet-18,CIFAR-100,4,74.40,8.14
+ViT-S,CIFAR-100,0,75.88,5.96
+ViT-S,CIFAR-100,1,75.29,5.75
+ViT-S,CIFAR-100,2,75.34,6.14
+ViT-S,CIFAR-100,3,76.23,5.68
+ViT-S,CIFAR-100,4,75.16,6.24
+TinyNet w/o attention,CIFAR-100,0,75.97,5.46
+TinyNet w/o attention,CIFAR-100,1,74.41,5.77
+TinyNet w/o attention,CIFAR-100,2,74.73,5.64
+TinyNet w/o attention,CIFAR-100,3,75.05,5.51
+TinyNet w/o attention,CIFAR-100,4,74.08,6.00
