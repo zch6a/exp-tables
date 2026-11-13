@@ -80,7 +80,8 @@ def wilcoxon(a: list[float], b: list[float]) -> Result:
     >>> wilcoxon([1, 2, 3, 4], [0, 0, 0, 5]).p  # d = 1, 2, 3, -1: ranks 1.5, 3, 4, 1.5; W = 1.5; {}, {1.5}, {1.5'}: 2 * 3/16
     0.375
     """
-    d = [float(f"{x - y:.12g}") for x, y in zip(a, b, strict=True)]
+    scale = max((abs(v) for v in (*a, *b)), default=0.0) or 1.0
+    d = [round((x - y) / scale, 11) for x, y in zip(a, b, strict=True)]  # ties at 11 digits of the values, not of the differences
     d = [x for x in d if x != 0]
     n = len(d)
     if n == 0:
@@ -106,11 +107,12 @@ def wilcoxon(a: list[float], b: list[float]) -> Result:
     return Result("Wilcoxon", w, min(1.0, 2 * t_cdf(z, 1e9)))
 
 
-def bootstrap(a: list[float], b: list[float], resamples: int = 10_000, seed: int = 0, alpha: float | None = None) -> Result:
+def bootstrap(a: list[float], b: list[float], resamples: int = 10_000, seed: int = 0, levels: list[float] | None = None) -> Result:
     """A bootstrap test of the difference in means, two-sided: both groups resampled after shifting them to a common
     mean (so the resamples are what equal means would give); P is the share at least as far from 0 as the difference
-    seen. Seeded: the same answer every time. Given the significance level, it stops early (after 2,000 resamples,
-    in steps of 1,000) once P is more than four standard errors from it: the answer would not change.
+    seen. Seeded: the same answer every time. Given the levels P will be held to (after a correction, alpha / k up to
+    alpha), it stops early (after 2,000 resamples, in steps of 1,000) once P is more than four standard errors from
+    every one of them: no decision would change.
 
     >>> bootstrap([1, 2, 3], [1, 2, 3]).p, bootstrap([10.0, 10.1, 9.9, 10.05], [1.0, 1.1, 0.9, 1.05]).p
     (1.0, 0.0)
@@ -130,9 +132,9 @@ def bootstrap(a: list[float], b: list[float], resamples: int = 10_000, seed: int
             if abs(sum(rng.choices(sa, k=na)) / na - sum(rng.choices(sb, k=nb)) / nb) >= far:
                 extreme += 1
         done += batch
-        if alpha is not None and done >= 2000:
+        if levels and done >= 2000:
             p = extreme / done
-            if abs(p - alpha) > 4 * math.sqrt(max(p * (1 - p), 1 / done) / done):
+            if all(abs(p - level) > 4 * math.sqrt(max(p * (1 - p), 1 / done) / done) for level in levels):
                 break
     return Result("bootstrap", seen, extreme / done)
 
@@ -147,7 +149,7 @@ def holm(ps: list[float]) -> list[float]:
     out, running = [0.0] * len(ps), 0.0
     for rank, k in enumerate(order):
         running = max(running, min(1.0, (len(ps) - rank) * ps[k]))
-        out[k] = round(running, 12)
+        out[k] = round(running, 15)  # 3 * 0.01 is 0.03, but 0.04999999999999 stays below 0.05
     return out
 
 
@@ -163,7 +165,7 @@ def benjamini_hochberg(ps: list[float]) -> list[float]:
     for i, k in enumerate(order):
         rank = m - i
         running = min(running, ps[k] * m / rank)
-        out[k] = round(min(1.0, running), 12)
+        out[k] = round(min(1.0, running), 15)
     return out
 
 

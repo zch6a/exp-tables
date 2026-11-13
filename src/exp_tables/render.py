@@ -3,6 +3,7 @@ table, with a legend saying what they mean."""
 
 from __future__ import annotations
 
+import re
 from html import escape
 
 from .table import Cell, Table, _spread
@@ -49,6 +50,7 @@ def _md(s: str) -> str:
     >>> _md(r"a|b_c*d\ <i>")
     'a\\|b\\_c\\*d\\\\ &lt;i&gt;'
     """
+    s = re.sub(r"\s*[\r\n]+\s*", " ", s)  # a line break would end the table row
     s = s.replace("\\", "\\\\")
     for c in "|*_`[]":
         s = s.replace(c, "\\" + c)
@@ -59,7 +61,8 @@ def markdown(t: Table) -> str:
     """A GitHub Markdown table: best in bold, second best underlined (``<ins>``), the spread after ±; column groups
     joined to the metric's name ("cifar10 · accuracy ↑"); then the legend."""
     label = lambda s: _md(t.labels.get(s) or s)  # noqa: E731
-    heads = [(f"{label(g)} · " if g else "") + label(m) + ARROWS.get(d, "") for g, m, d in zip(t.groups, t.metrics, t.directions, strict=True)]
+    arrow = lambda m, d: "" if any(a in m for a in "↑↓") else ARROWS.get(d, "")  # noqa: E731  # not twice ("reward ↓")
+    heads = [(f"{label(g)} · " if g else "") + label(m) + arrow(m, d) for g, m, d in zip(t.groups, t.metrics, t.directions, strict=True)]
     lines = ["| " + label(t.row_title) + " | " + " | ".join(heads) + " |", "|---|" + "---:|" * len(heads)]
     for name, row in zip(t.rows, t.cells, strict=True):
         cells = []
@@ -86,7 +89,7 @@ def html(t: Table) -> str:
         out.append("<tr><th></th>" + "".join(f'<th colspan="{n}" style="text-align: center">{e(g)}</th>' for g, n in spans) + "</tr>")
     out.append(
         f"<tr><th>{e(t.row_title)}</th>"
-        + "".join(f"<th>{e(m)}{ARROWS.get(d, '')}</th>" for m, d in zip(t.metrics, t.directions, strict=True))
+        + "".join(f"<th>{e(m)}{'' if any(a in m for a in '↑↓') else ARROWS.get(d, '')}</th>" for m, d in zip(t.metrics, t.directions, strict=True))
         + "</tr>"
     )
     out += ["</thead>", "<tbody>"]

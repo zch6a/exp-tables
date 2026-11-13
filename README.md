@@ -90,7 +90,7 @@ exp-tables --config table.json --check paper/table.tex  # does the paper's table
 | `--label NAME=TEXT`, `--decimals METRIC=N` | how the table prints names and numbers (default decimals: two significant digits of the spread) |
 | `--spread std\|sem\|ci\|none` | after the mean: standard deviation (default), standard error, 95% t interval, nothing |
 | `--test auto\|welch\|paired\|wilcoxon\|bootstrap\|none` | the test against each column's best (auto: paired t when the seeds pair up, else Welch's); `--alpha`, `--correction holm\|bh\|none` |
-| `--format latex\|markdown\|html\|json` | the output (LaTeX needs `\usepackage{booktabs}`; labels are escaped, and a label in a non-Latin script needs a document set up for it) |
+| `--format latex\|markdown\|html\|json` | the output (LaTeX needs `\usepackage{booktabs}`; labels are escaped, Greek letters written as math; a label in another non-Latin script needs a document set up for it) |
 | `--save-config FILE`, `--config FILE` | a config that makes the same table again: inputs (relative to it), filters, the layout as worked out, every option, the version |
 | `--check FILE` | compare with a committed table: exit 1 and the lines that differ |
 
@@ -112,14 +112,30 @@ Mean and sample standard deviation over seeds; the 95% interval from Student's t
 its best against every other method with two or more seeds — the paired t test when both have the same seeds,
 Welch's otherwise (or the Wilcoxon signed-rank test, exact up to 25 pairs, ties included, or a seeded bootstrap) —
 with the column's p values corrected together (Holm by default). The tests decide the bold: a row is bold when it
-is not significantly worse than the best, even if it prints the same number; without a test (one seed), the best
-as printed. Effect sizes: Hedges' g and Cliff's delta. "Seeds needed":
+is not significantly worse than the best (of the rows with two or more seeds), even if it prints the same number. A
+row with one seed cannot be tested: it is left unmarked, and a note says so; in a table with no tests at all, the
+best is marked as printed. Effect sizes: Hedges' g and Cliff's delta. "Seeds needed":
 the smallest n for which a difference of the size seen would be found with power 0.8, by the t distribution at n's
 own degrees of freedom (paired seeds by the spread of their differences).
 
 Everything is written out in the standard library and checked against independent values (t quantiles against
 the published table, the t distribution at fractional degrees of freedom against a numerical integration, exact
 Wilcoxon p values by hand).
+
+## From Python
+
+```python
+import exp_tables
+
+runs = exp_tables.read("results.csv")            # or a TensorBoard folder, an mlruns folder, a JSON file
+table = exp_tables.build(runs, exp_tables.Spec(metrics=["accuracy"], labels={"accuracy": "Acc. (%)"}))
+print(exp_tables.latex(table))                   # or markdown(table), html(table)
+print(exp_tables.comparisons(table))             # what each mark rests on
+print(table.notes)                               # what looks wrong in the runs, if anything
+```
+
+`build` checks the spec as the command line does (a `ValueError` names what the runs have). Filters, several inputs
+and JSON output are the command line's.
 
 ## In a pull request
 

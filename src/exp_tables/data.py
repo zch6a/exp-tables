@@ -231,8 +231,9 @@ def read_mlflow(folder: Path) -> list[Run]:
     return runs
 
 
-def read(path: Path) -> list[Run]:
-    """Runs from a file or an MLflow folder, by what it is."""
+def read(path: str | Path) -> list[Run]:
+    """Runs from a file or a folder (MLflow's, or TensorBoard logs), by what it is."""
+    path = Path(path)
     if path.is_dir():
         if any(path.glob("*/*/metrics")):
             return read_mlflow(path)

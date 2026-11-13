@@ -197,3 +197,58 @@ updated with what changed.
 Tests: 78 (were 55), Python 3.10 and 3.13; ruff, mypy clean.
 
 Next: round 2.
+
+### 2026-11-13 — polishing round 2
+
+Round 1's CI run was green on every job.
+
+**Real logs.** Fetched to a temporary folder from the Hugging Face Hub, deleted after; their shapes kept as
+synthetic tests in `tests/test_round2.py`.
+
+- MultiBERTs fine-tunes (3 pre-training seeds × 5 fine-tuning seeds, 15 TF2/Flax event files of 5.4 MB): read
+  right (tensor scalars, last step), and the table's choice (rows: the fine-tuning run; seeds: the pre-training
+  seed) is sensible; `--seed ft --columns none` gives the other view. Found:
+  - Reading took 20 s for 80 MB. Most varints are one byte (a fast path), and only the records whose values are
+    kept need their CRC32C checked (if one fails, the file is read again checking every record, so a corrupt record
+    still ends it): 10 s, the same output byte for byte.
+  - The logged learning rate was a metric, with ten decimals of float noise. Logged settings (learning rate, epoch,
+    step) are left out of the default metrics; a spread below 10⁻⁹ of the mean is noise.
+- Open LLM Leaderboard results (lm-evaluation-harness `results_*.json`, three Llama 2 models): read as one run with
+  hundreds of "metrics" from its config, and 429 "shared seed" notes. Now its own reader: one run per model and
+  task, metrics by name with their filter (`exact_match (strict-match)`), standard errors left out; the model from
+  `model_name` or `model_args`. `--filter task=a,b` keeps either.
+- `--columns ""` cannot be typed in PowerShell 5 (it drops empty arguments): `--columns none`.
+
+**Second independent review** (statistics against independent values, the marks, rendering, the API; 9 confirmed
+defects, all fixed, tests in `tests/test_review_round2.py`). It confirmed the t distribution (published quantiles,
+exact formulas for df 1–3, integration at fractional df), Welch's and the paired t, Wilcoxon (all 2ⁿ sign patterns,
+1,440 cases), Holm and BH (311 cases), Hedges' g, Cliff's delta, and seeds needed (simulated power 0.79–0.91 at the
+n given, below 0.8 at n − 1). Fixed:
+
+1. LaTeX rows starting with `[` did not compile (read as `\\[...]`), and a leading `*` vanished: such labels get `{}`.
+2. The bootstrap's early stop looked at α, but after Holm the decision is at α/k…α: it now stops only when P is far
+   from every level the correction can hold it to (two of 150 random tables had a different bold before).
+3. Cells that could not be tested (one seed) were bold or not as printed under a legend saying bold means tested.
+   Now the column's best is chosen among the rows with two or more seeds, every other row is tested against it, and
+   a row with one seed is left unmarked, with a note counting such cells. (A table with no tests at all still marks
+   the best as printed, and its legend says "untested".)
+4. "About N seeds would tell" could name N already there: it now uses the level the corrected p is held to, the
+   pairs Wilcoxon needs to reach it at all (2/2ⁿ < level), and is always more than there are.
+5. `import exp_tables` gave nothing, `read()` wanted a `Path`, and `build()` took any `Spec` (`spread="CI"`,
+   `test="Wilcoxon"`, a misspelt row field) and made a wrong table. The package exports the API (with a doctest),
+   `read` takes a string, and `build` checks the spec (the checks moved from the CLI to `table.check`).
+6. A line break in a label broke the Markdown row.
+7. Wilcoxon missed ties among large values (rounded at 12 digits of the difference): now relative to the values.
+8. Greek letters stopped pdflatex: written as math (`\ensuremath{\beta}`; capitals that look Latin as Latin).
+   `<`, `>`, `|` escaped too. Other scripts (CJK) need the paper's own setup, as the README says.
+9. Corrected p values were rounded to 12 decimals, so 0.04999999999999 became 0.05: now 15.
+
+Also: a metric named `reward ↓` printed two arrows.
+
+The example and the README's table and report are unchanged. LaTeX with the nastiest labels compiles with pdflatex
+(local MiKTeX, packages already installed, the installer disabled).
+
+Tests: 94 (were 78), Python 3.10 and 3.13; ruff, mypy clean.
+
+Next: round 3. Worth doing: lm-evaluation-harness gives a standard error per metric, so a single-run comparison of
+models could be tested with it (a z test on the difference) instead of being untested.

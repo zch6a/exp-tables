@@ -86,7 +86,7 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 | `--label NAME=TEXT`、`--decimals METRIC=N` | 名称和数字的显示方式（默认小数位：波动的两位有效数字） |
 | `--spread std\|sem\|ci\|none` | 均值后面显示：标准差（默认）、标准误、95% t 区间、不显示 |
 | `--test auto\|welch\|paired\|wilcoxon\|bootstrap\|none` | 与每列最佳比较所用的检验（auto：种子能配对时用配对 t，否则 Welch）；`--alpha`、`--correction holm\|bh\|none` |
-| `--format latex\|markdown\|html\|json` | 输出格式（LaTeX 需要 `\usepackage{booktabs}`；名称会转义，非拉丁文字的名称需要文档本身支持） |
+| `--format latex\|markdown\|html\|json` | 输出格式（LaTeX 需要 `\usepackage{booktabs}`；名称会转义，希腊字母写成数学符号；其他非拉丁文字的名称需要文档本身支持） |
 | `--save-config FILE`、`--config FILE` | 能再生成同一张表的配置：输入文件（相对配置文件的路径）、过滤条件、推断出的表结构、所有选项、版本 |
 | `--check FILE` | 与已提交的表比较：不一致时退出码为 1，并列出不同的行 |
 
@@ -106,10 +106,24 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 
 跨种子的均值与样本标准差；95% 区间来自 Student t 分布。每个有方向的列：其最佳方法与每个至少有两个种子的其他方法比较——
 两者种子相同时用配对 t 检验，否则用 Welch 检验（也可选 Wilcoxon 符号秩检验，25 对以内精确计算、含并列，或固定随机种子的 bootstrap）——
-同一列的 p 值一起校正（默认 Holm）。加粗由检验决定：没有显著差于最佳的行加粗，即使印出来的数字相同也一样；无法检验时（只有一个种子）按印出的数字标最佳。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
+同一列的 p 值一起校正（默认 Holm）。加粗由检验决定：没有显著差于最佳（在有两个以上种子的行中）的行加粗，即使印出来的数字相同也一样。只有一个种子的行无法检验，不作标记，并会提示；整张表都无法检验时，按印出的数字标最佳。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
 按 n 自身的自由度用 t 分布计算（配对种子按差值的波动）。
 
 全部用标准库实现，并对照独立数值核对（t 分位数对照公开的表，非整数自由度的 t 分布对照数值积分，Wilcoxon 精确 p 值手算核对）。
+
+## 在 Python 里用
+
+```python
+import exp_tables
+
+runs = exp_tables.read("results.csv")            # 也可以是 TensorBoard 目录、mlruns 目录、JSON 文件
+table = exp_tables.build(runs, exp_tables.Spec(metrics=["accuracy"], labels={"accuracy": "Acc. (%)"}))
+print(exp_tables.latex(table))                   # 或 markdown(table)、html(table)
+print(exp_tables.comparisons(table))             # 每个标记的依据
+print(table.notes)                               # 运行记录里看起来不对的地方（如果有）
+```
+
+`build` 和命令行一样检查表结构（`ValueError` 会说明运行记录里有什么）。过滤、多个输入文件和 JSON 输出由命令行提供。
 
 ## 在 Pull Request 里用
 

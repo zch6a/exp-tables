@@ -30,6 +30,7 @@ GENERIC = re.compile(r"score|top[- ]?[15]", re.I)  # "brier score", "top-1 error
 SEED_VALUE = re.compile(r"^(?:seed|s|trial|run|rep|repeat|fold)[ _=-]?\d+$", re.I)
 # a setting or a counter that a logger records like a metric (TensorBoard, MLflow): not shown unless asked for
 LOGGED_SETTING = re.compile(r"(?:^|[/_ .-])(?:lr|learning[_ ]rate|epoch|global[_ ]step|step|lr[_ ]scale|momentum|weight[_ ]decay)$", re.I)
+TESTS = ("auto", "welch", "paired", "wilcoxon", "bootstrap", "none")
 ROW_FIELDS = ("method", "model", "algorithm", "approach", "system", "baseline", "name", "run", "experiment")
 
 
@@ -196,6 +197,35 @@ def resolve(runs: list[Run], spec: Spec) -> Spec:
     return Spec(rows, columns, metrics, seed, spec.better, spec.spread, spec.decimals, spec.labels, spec.test, spec.alpha, spec.correction)
 
 
+def check(runs: list[Run], spec: Spec) -> None:
+    """Every field and metric the spec names exists in the runs, and every option has a value it takes; else a
+    ValueError says what there is."""
+    fields = list(dict.fromkeys(k for r in runs for k in r.fields))
+    metrics = list(dict.fromkeys(m for r in runs for m in r.metrics))
+    for name in [*spec.rows, *(spec.columns or []), *([spec.seed] if spec.seed else [])]:
+        if name not in fields:
+            raise ValueError(
+                f"no field {name!r} in the runs; their fields: {', '.join(fields) or 'none'}; their metrics: {', '.join(metrics) or 'none'}"
+            )
+    for m in spec.metrics:
+        if m not in metrics:
+            raise ValueError(f"no metric {m!r} in the runs; their metrics: {', '.join(metrics) or 'none'}")
+    if spec.spread not in ("std", "sem", "ci", "none"):
+        raise ValueError(f"spread is std, sem, ci or none, not {spec.spread!r}")
+    for m, way in spec.better.items():
+        if way not in ("higher", "lower"):
+            raise ValueError(f"better {m}= takes higher or lower, not {way!r}")
+    if spec.test not in TESTS:
+        raise ValueError(f"test is {', '.join(TESTS)}, not {spec.test!r}")
+    if spec.correction not in ("holm", "bh", "none"):
+        raise ValueError(f"correction is holm, bh or none, not {spec.correction!r}")
+    if not (isinstance(spec.alpha, (int, float)) and 0 < spec.alpha < 1):
+        raise ValueError(f"alpha is a probability between 0 and 1 (0.05, not 5), not {spec.alpha!r}")
+    for m, d in spec.decimals.items():
+        if not (isinstance(d, int) and 0 <= d <= 12):
+            raise ValueError(f"decimals {m}= takes a whole number from 0 to 12, not {d!r}")
+
+
 def _auto_decimals(summaries: list[Summary]) -> int:
     """Two significant digits of the column's typical (median) spread, so that one very steady row does not stretch
     every number of its column; with no spread (one seed each, or equal values), the decimals the values
@@ -219,6 +249,7 @@ def build(runs: list[Run], spec: Spec | None = None) -> Table:
     """The table of `runs` as `spec` asks (worked out where it does not say)."""
     spec = spec or Spec()
     runs = as_fields(runs, [*spec.rows, *(spec.columns or []), spec.seed])
+    check(runs, spec)
     spec = resolve(runs, spec)
     key = lambda r, names: " / ".join(r.fields.get(n, "") for n in names)  # noqa: E731
     row_keys = list(dict.fromkeys(key(r, spec.rows) for r in runs))
@@ -254,7 +285,9 @@ def build(runs: list[Run], spec: Spec | None = None) -> Table:
                   directions, decimals, spec.spread, spec.labels, test=spec.test, correction=spec.correction)  # fmt: skip
     table.notes += _shared_seeds(runs, spec, seeds)
     if spec.test != "none":
-        _significance(table, spec)
+        leaders, tested = _significance(table, spec)
+        if table.comparisons:  # then bold means tested: a cell that could not be tested is not marked, and a note says so
+            _unmark_untested(table, leaders, tested)
         table.notes += _test_notes(table, spec)
     for j in range(len(columns)):  # the second best: after a single best (with several marked best, the next is third), among three or more
         rest = [row[j] for row in cells if row[j].summary is not None and not row[j].best]
@@ -292,16 +325,24 @@ def _pairs(a: Cell, b: Cell) -> bool:
     return bool(a.seeds) and all(a.seeds) and sorted(a.seeds) == sorted(b.seeds) and len(set(a.seeds)) == len(a.seeds)
 
 
-def _needed(a: Cell, b: Cell, r: Result, alpha: float) -> int | None:
-    """Seeds needed, the way the test went: paired values by their differences."""
+def _needed(a: Cell, b: Cell, r: Result, level: float) -> int | None:
+    """Seeds needed for a difference within the noise to be found, the way the test went: at the level the corrected
+    p value is in effect held to; paired values by their differences; for Wilcoxon, at least the pairs it needs to
+    reach that level at all; always more than there are (fewer did not tell)."""
     assert a.summary is not None and b.summary is not None
     if r.name in ("paired t", "Wilcoxon"):
         order = dict(zip(b.seeds, b.summary.values, strict=True))
-        return seeds_needed(a.summary.values, [order[s] for s in a.seeds], alpha, paired=True)
-    return seeds_needed(a.summary.values, b.summary.values, alpha)
+        n = seeds_needed(a.summary.values, [order[s] for s in a.seeds], level, paired=True)
+    else:
+        n = seeds_needed(a.summary.values, b.summary.values, level)
+    if n is None:
+        return None
+    if r.name == "Wilcoxon":
+        n = max(n, math.floor(math.log2(2 / level)) + 1)  # 2 / 2^n < level
+    return max(n, a.summary.n + 1, b.summary.n + 1)
 
 
-def _test(spec_test: str, a: Cell, b: Cell, alpha: float = 0.05) -> Result:
+def _test(spec_test: str, a: Cell, b: Cell, levels: list[float] | None = None) -> Result:
     """The test of two cells' values: paired when asked, or (auto) when both have the same seeds."""
     assert a.summary is not None and b.summary is not None
     x, y = a.summary.values, b.summary.values
@@ -310,7 +351,7 @@ def _test(spec_test: str, a: Cell, b: Cell, alpha: float = 0.05) -> Result:
         order = {s: v for s, v in zip(b.seeds, y, strict=True)}
         y_paired = [order[s] for s in a.seeds]
     if spec_test == "bootstrap":
-        return bootstrap(x, y, alpha=alpha)
+        return bootstrap(x, y, levels=levels)
     if spec_test == "wilcoxon" and pairs:
         return wilcoxon(x, y_paired)
     if spec_test in ("paired", "auto") and pairs:
@@ -331,9 +372,34 @@ def _test_notes(table: Table, spec: Spec) -> list[str]:
     return notes
 
 
-def _significance(table: Table, spec: Spec) -> None:
+def _unmark_untested(table: Table, leaders: dict[int, Cell], tested: set[int]) -> None:
+    """With tests in the table, the legend says bold is "the best, or not significantly different from it": a cell
+    that could not be tested (one seed, or every cell of its column but one with one seed) is neither, so it is left
+    unmarked, the column's best (of the rows with two or more seeds) bold, and a note counts the cells left untested."""
+    untested = 0
+    for j in range(len(table.directions)):
+        leader = leaders.get(j)
+        if leader is None or leader.summary is None:
+            continue
+        for row in table.cells:
+            c = row[j]
+            if c.summary is None or c is leader or id(c) in tested:
+                continue
+            untested += 1
+            c.best = False
+        leader.best = True
+    if untested:
+        table.notes.append(
+            f"{untested} cell(s) could not be tested against their column's best (one seed): they are not marked either way, whatever their value"
+        )
+
+
+def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
     """Each column's best against the other rows (with two or more seeds each); the p values of a column corrected
-    together; the rows not significantly different from the best marked best as well (tied)."""
+    together; the rows not significantly different from the best marked best as well (tied). Returns each column's
+    best and the cells tested (by id)."""
+    leaders: dict[int, Cell] = {}
+    tested: set[int] = set()
     for j, way in enumerate(table.directions):
         if way not in ("higher", "lower"):
             continue
@@ -341,17 +407,31 @@ def _significance(table: Table, spec: Spec) -> None:
         if len(column) < 2:
             continue
         sign = 1 if way == "higher" else -1
-        best_name, best = max(column, key=lambda nc: sign * nc[1].summary.mean)  # type: ignore[union-attr]
+        # the best of the rows that can be tested (two or more seeds), so that one lucky seed does not leave the column untested
+        testable = [(name, c) for name, c in column if c.summary is not None and c.summary.n >= 2] or column
+        best_name, best = max(testable, key=lambda nc: sign * nc[1].summary.mean)  # type: ignore[union-attr]
+        leaders[j] = best
         others = [(name, c) for name, c in column if c is not best and c.summary is not None and c.summary.n >= 2]
         if best.summary is None or best.summary.n < 2 or not others:
-            continue  # untested: the marks stay as printed
-        results = [_test(spec.test, best, c, spec.alpha) for _, c in others]
+            continue  # untested
+        k = len(others)  # the levels the corrected p values are held to, for the bootstrap to stop early safely
+        levels = (
+            [spec.alpha / i for i in range(1, k + 1)]
+            if spec.correction == "holm"
+            else [spec.alpha * i / k for i in range(1, k + 1)]
+            if spec.correction == "bh"
+            else [spec.alpha]
+        )
+        results = [_test(spec.test, best, c, levels) for _, c in others]
         ps = [r.p for r in results]
         adjusted = holm(ps) if spec.correction == "holm" else benjamini_hochberg(ps) if spec.correction == "bh" else ps
         for (name, c), r, p_adj in zip(others, results, adjusted, strict=True):
             assert c.summary is not None
+            tested.add(id(c))
             # the test decides, also against "equal as printed": bold says "not significantly worse"
             c.best, c.tied = p_adj >= spec.alpha, p_adj >= spec.alpha
+            # the level this comparison was in effect held to, after the correction
+            level = spec.alpha * r.p / p_adj if 0 < r.p <= p_adj else spec.alpha
             table.comparisons.append(
                 Comparison(
                     table.groups[j],
@@ -365,16 +445,51 @@ def _significance(table: Table, spec: Spec) -> None:
                     hedges_g(best.summary.values, c.summary.values),
                     cliffs_delta(best.summary.values, c.summary.values),
                     (best.summary.n, c.summary.n),
-                    _needed(best, c, r, spec.alpha),
+                    None if c.best is False else _needed(best, c, r, level),
                     spec.alpha,
                 )  # fmt: skip
             )
+    return leaders, tested
 
 
 # ---------------------------------------------------------------- LaTeX
 
 LATEX_SPECIAL = {"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
-                 "^": r"\textasciicircum{}", "\\": r"\textbackslash{}"}  # fmt: skip
+                 "^": r"\textasciicircum{}", "\\": r"\textbackslash{}", "<": r"\textless{}", ">": r"\textgreater{}", "|": r"\textbar{}",
+                 "\n": " ", "\r": " "}  # fmt: skip
+# Greek letters, common in names (β-VAE, α-entmax), which pdflatex's utf8 input does not know: as math
+_GREEK = [
+    "alpha",
+    "beta",
+    "gamma",
+    "delta",
+    "epsilon",
+    "zeta",
+    "eta",
+    "theta",
+    "iota",
+    "kappa",
+    "lambda",
+    "mu",
+    "nu",
+    "xi",
+    "o",
+    "pi",
+    "rho",
+    "sigma",
+    "tau",
+    "upsilon",
+    "phi",
+    "chi",
+    "psi",
+    "omega",
+]
+for _i, _name in enumerate(_GREEK):
+    LATEX_SPECIAL[chr(0x3B1 + _i + (_i >= 17))] = "o" if _name == "o" else rf"\ensuremath{{\{_name}}}"  # skips final sigma
+    _upper = chr(0x391 + _i + (_i >= 17))
+    _cap = _name.capitalize()
+    _latin = dict(Alpha="A", Beta="B", Epsilon="E", Zeta="Z", Eta="H", Iota="I", Kappa="K", Mu="M", Nu="N", O="O", Rho="P", Tau="T", Chi="X")
+    LATEX_SPECIAL[_upper] = _latin.get(_cap) or rf"\ensuremath{{\{_cap}}}"
 
 
 def tex(s: str) -> str:
@@ -382,6 +497,8 @@ def tex(s: str) -> str:
 
     >>> tex("acc_top-1 (%) & F#")
     'acc\\_top-1 (\\%) \\& F\\#'
+    >>> tex("β-VAE <ours>")
+    '\\ensuremath{\\beta}-VAE \\textless{}ours\\textgreater{}'
     """
     return "".join(LATEX_SPECIAL.get(c, c) for c in s)
 
@@ -412,6 +529,10 @@ def latex(t: Table) -> str:
     def label(s: str) -> str:
         return tex(t.labels.get(s) or s)
 
+    def row_label(s: str) -> str:  # after \\ or \midrule, a leading [ is read as an optional argument, a * as \\*
+        text = label(s)
+        return "{}" + text if text.startswith(("[", "*")) else text
+
     arrow = {"higher": r" $\uparrow$", "lower": r" $\downarrow$"}
     lines = [rf"\begin{{tabular}}{{l{'r' * len(t.metrics)}}}", r"\toprule"]
     if any(t.groups):
@@ -423,10 +544,11 @@ def latex(t: Table) -> str:
                 spans.append((g, j, j))
         lines.append(" & " + " & ".join(rf"\multicolumn{{{b - a + 1}}}{{c}}{{{label(g)}}}" for g, a, b in spans) + r" \\")
         lines.append(" ".join(rf"\cmidrule(lr){{{a}-{b}}}" for _, a, b in spans))
-    lines.append(label(t.row_title) + " & " + " & ".join(label(m) + arrow.get(d, "") for m, d in zip(t.metrics, t.directions, strict=True)) + r" \\")
+    heads = [label(m) + ("" if re.search("[↑↓]", m) else arrow.get(d, "")) for m, d in zip(t.metrics, t.directions, strict=True)]
+    lines.append(row_label(t.row_title) + " & " + " & ".join(heads) + r" \\")
     lines.append(r"\midrule")
     for name, row in zip(t.rows, t.cells, strict=True):
         cells = [latex_cell(c, d, t.spread) for c, d in zip(row, t.decimals, strict=True)]
-        lines.append(label(name) + " & " + " & ".join(cells) + r" \\")
+        lines.append(row_label(name) + " & " + " & ".join(cells) + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(lines) + "\n"

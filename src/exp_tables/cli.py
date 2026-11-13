@@ -23,7 +23,8 @@ from typing import Any
 from . import __version__, render
 from .data import Run, number, read
 from .report import comparisons
-from .table import Spec, Table, as_fields, build, latex, resolve
+from .table import TESTS, Spec, Table, as_fields, build, latex, resolve
+from .table import check as check_spec
 
 SPEC_KEYS = ("rows", "columns", "metrics", "seed", "better", "spread", "decimals", "labels", "test", "alpha", "correction")
 
@@ -41,9 +42,6 @@ def _pairs(items: list[str], what: str) -> dict[str, str]:
             raise UsageError(f"--{what} takes key=value, not {item!r}")
         out[key.strip()] = value.strip()
     return out
-
-
-TESTS = ("auto", "welch", "paired", "wilcoxon", "bootstrap", "none")
 
 
 def _list(text: str | None) -> list[str]:
@@ -84,31 +82,11 @@ def load_runs(inputs: list[Path], filters: dict[str, str], settings: list[str] |
 
 
 def check(runs: list[Run], spec: Spec) -> None:
-    """Every field and metric the spec names exists in the runs; else say which do."""
-    fields = list(dict.fromkeys(k for r in runs for k in r.fields))
-    metrics = list(dict.fromkeys(m for r in runs for m in r.metrics))
-    for name in [*spec.rows, *(spec.columns or []), *([spec.seed] if spec.seed else [])]:
-        if name not in fields:
-            raise UsageError(
-                f"no field {name!r} in the runs; their fields: {', '.join(fields) or 'none'}; their metrics: {', '.join(metrics) or 'none'}"
-            )
-    for m in spec.metrics:
-        if m not in metrics:
-            raise UsageError(f"no metric {m!r} in the runs; their metrics: {', '.join(metrics) or 'none'}")
-    if spec.spread not in ("std", "sem", "ci", "none"):
-        raise UsageError(f"--spread is std, sem, ci or none, not {spec.spread!r}")
-    for m, way in spec.better.items():
-        if way not in ("higher", "lower"):
-            raise UsageError(f"--better {m}= takes higher or lower, not {way!r}")
-    if spec.test not in TESTS:
-        raise UsageError(f"--test is {', '.join(TESTS)}, not {spec.test!r}")
-    if spec.correction not in ("holm", "bh", "none"):
-        raise UsageError(f"--correction is holm, bh or none, not {spec.correction!r}")
-    if not (isinstance(spec.alpha, (int, float)) and 0 < spec.alpha < 1):
-        raise UsageError(f"--alpha is a probability between 0 and 1 (0.05, not 5), not {spec.alpha!r}")
-    for m, d in spec.decimals.items():
-        if not (isinstance(d, int) and 0 <= d <= 12):
-            raise UsageError(f"--decimals {m}= takes a whole number from 0 to 12, not {d!r}")
+    """The spec against the runs (table.check), its complaints as usage errors."""
+    try:
+        check_spec(runs, spec)
+    except ValueError as e:
+        raise UsageError(str(e)) from e
 
 
 def to_json(t: Table) -> dict[str, Any]:

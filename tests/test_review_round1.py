@@ -121,7 +121,7 @@ def test_options_are_checked(tmp_path: Path, capsys: pytest.CaptureFixture[str])
     cfg.write_text(json.dumps({"inputs": ["r.csv"], "spec": {"correction": "Holm"}}), encoding="utf-8")
     with pytest.raises(SystemExit) as e:
         main(["--config", str(cfg)])
-    assert e.value.code == 2 and "--correction is holm, bh or none" in capsys.readouterr().err
+    assert e.value.code == 2 and "correction is holm, bh or none, not 'Holm'" in capsys.readouterr().err
     code, out, _ = run([p, "--correction", "none", "--format", "markdown", "--columns", ""], capsys)
     assert "uncorrected" in out
 
