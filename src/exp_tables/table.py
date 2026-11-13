@@ -113,8 +113,8 @@ class Comparison:
     test: str
     p: float
     p_adjusted: float
-    hedges_g: float
-    cliffs_delta: float
+    hedges_g: float | None  # None for a z test of single results: no spread of values to scale by
+    cliffs_delta: float | None
     seeds: tuple[int, int]
     seeds_needed: int | None  # per method, for a difference of this size to be found (power 0.8)
     alpha: float = 0.05
@@ -166,22 +166,30 @@ def with_errors(runs: list[Run]) -> list[Run]:
     """The runs with a metric's standard error, reported as a metric of its own (``acc_stderr``, ``acc_se``, ``acc
     (strict) stderr``), made that metric's error.
 
+    An error column is never a metric (also in a run that lacks the metric itself); a negative or infinite error is
+    ignored.
+
     >>> with_errors([Run({}, {"acc": 0.5, "acc_stderr": 0.01, "loss": 1.0})])[0].errors
     {'acc': 0.01}
     """
+    every = {m for r in runs for m in r.metrics}
+    names = {m: base for m in every if (f := ERROR_NAME.match(m)) and (base := f["base"] + (f["rest"] or "")) in every and base != m}
+    if not names:
+        return runs
     out = []
     for r in runs:
         errors = dict(r.errors)
-        for m, v in r.metrics.items():
-            found = ERROR_NAME.match(m)
-            if found and (base := found["base"] + (found["rest"] or "")) in r.metrics and m != base:
-                errors[base] = v
-        if errors == r.errors:
-            out.append(r)
-            continue
-        names = {m for m in r.metrics if (f := ERROR_NAME.match(m)) and f["base"] + (f["rest"] or "") in errors}
+        for m, base in names.items():
+            if m in r.metrics and base in r.metrics and math.isfinite(r.metrics[m]) and r.metrics[m] >= 0:
+                errors[base] = r.metrics[m]
         out.append(Run(dict(r.fields), {k: v for k, v in r.metrics.items() if k not in names}, r.source, errors))
     return out
+
+
+def error_columns(runs: list[Run]) -> list[str]:
+    """The metrics `with_errors` would read as another metric's standard error, for a note."""
+    every = {m for r in runs for m in r.metrics}
+    return sorted(m for m in every if (f := ERROR_NAME.match(m)) and (base := f["base"] + (f["rest"] or "")) in every and base != m)
 
 
 def as_fields(runs: list[Run], names: list[str]) -> list[Run]:
@@ -224,7 +232,8 @@ def resolve(runs: list[Run], spec: Spec) -> Spec:
             if n not in rows and n not in ids and not n.lower().startswith(("config/", "params/")) and (not rows or _crosses(runs, rows, n))
         ][:1]
     )
-    found = list(dict.fromkeys(m for r in runs for m in r.metrics))
+    errors = set(error_columns(runs))  # another metric's standard error: not a column
+    found = [m for m in dict.fromkeys(m for r in runs for m in r.metrics) if m not in errors]
     metrics = spec.metrics or [m for m in found if not LOGGED_SETTING.search(m)] or found
     return Spec(rows, columns, metrics, seed, spec.better, spec.spread, spec.decimals, spec.labels, spec.test, spec.alpha, spec.correction)
 
@@ -239,7 +248,10 @@ def check(runs: list[Run], spec: Spec) -> None:
             raise ValueError(
                 f"no field {name!r} in the runs; their fields: {', '.join(fields) or 'none'}; their metrics: {', '.join(metrics) or 'none'}"
             )
+    errors = set(error_columns(runs))
     for m in spec.metrics:
+        if m in errors:
+            raise ValueError(f"{m!r} is read as the standard error of the metric it is named after, not as a metric of its own")
         if m not in metrics:
             raise ValueError(f"no metric {m!r} in the runs; their metrics: {', '.join(metrics) or 'none'}")
     if spec.spread not in ("std", "sem", "ci", "none"):
@@ -281,7 +293,9 @@ def _auto_decimals(summaries: list[Summary], errors: list[float] | None = None) 
 def build(runs: list[Run], spec: Spec | None = None) -> Table:
     """The table of `runs` as `spec` asks (worked out where it does not say)."""
     spec = spec or Spec()
-    runs = with_errors(as_fields(runs, [*spec.rows, *(spec.columns or []), spec.seed]))
+    runs = as_fields(runs, [*spec.rows, *(spec.columns or []), spec.seed])
+    read_as_errors = error_columns(runs)
+    runs = with_errors(runs)
     check(runs, spec)
     spec = resolve(runs, spec)
     key = lambda r, names: " / ".join(r.fields.get(n, "") for n in names)  # noqa: E731
@@ -326,14 +340,17 @@ def build(runs: list[Run], spec: Spec | None = None) -> Table:
                 c.best = round(c.summary.mean, decimals[j]) == ranked[0]  # equal as printed: both are the best
     table = Table(row_keys, " / ".join(spec.labels.get(n, n) for n in spec.rows), [g for g, _ in columns], [m for _, m in columns], cells,
                   directions, decimals, spec.spread, spec.labels, test=spec.test, correction=spec.correction)  # fmt: skip
+    if read_as_errors:
+        table.notes.append(f"read as standard errors (of the metric they are named after): {', '.join(read_as_errors)}")
     table.notes += _shared_seeds(runs, spec, seeds)
+    untested: set[int] = set()
     if spec.test != "none":
         leaders, tested = _significance(table, spec)
         if table.comparisons:  # then bold means tested: a cell that could not be tested is not marked, and a note says so
-            _unmark_untested(table, leaders, tested)
+            untested = _unmark_untested(table, leaders, tested)
         table.notes += _test_notes(table, spec)
     for j in range(len(columns)):  # the second best: after a single best (with several marked best, the next is third), among three or more
-        rest = [row[j] for row in cells if row[j].summary is not None and not row[j].best]
+        rest = [row[j] for row in cells if row[j].summary is not None and not row[j].best and id(row[j]) not in untested]
         single_best = sum(row[j].best for row in cells) == 1
         if directions[j] in ("higher", "lower") and single_best and len([row[j] for row in cells if row[j].summary is not None]) > 2 and rest:
             sign = 1 if directions[j] == "higher" else -1
@@ -415,30 +432,35 @@ def _test_notes(table: Table, spec: Spec) -> list[str]:
                      "those rows are within the noise whatever the values; more seeds, or the paired t test, can tell")  # fmt: skip
     if spec.test in ("paired", "wilcoxon") and any(c.test == "Welch's t" for c in table.comparisons):
         notes.append(f"some rows' seeds do not pair up with the best's: Welch's t test instead of the {spec.test} test for them")
+    if spec.test not in ("auto", "none") and any(c.test.startswith("z") for c in table.comparisons):
+        notes.append(f"single results are compared by their standard errors (a z test), not by the {spec.test} test, which needs seeds")
     return notes
 
 
-def _unmark_untested(table: Table, leaders: dict[int, Cell], tested: set[int]) -> None:
+def _unmark_untested(table: Table, leaders: dict[int, Cell], tested: set[int]) -> set[int]:
     """With tests in the table, the legend says bold is "the best, or not significantly different from it": a cell
-    that could not be tested (one seed, or every cell of its column but one with one seed) is neither, so it is left
-    unmarked, the column's best (of the rows with two or more seeds) bold, and a note counts the cells left untested."""
-    untested = 0
-    for j in range(len(table.directions)):
-        leader = leaders.get(j)
-        if leader is None or leader.summary is None:
+    that could not be tested is neither, so it is left unmarked (not underlined either), the column's best bold, and a
+    note counts the cells left untested. A column where nothing could be tested is left unmarked as a whole. Returns
+    the untested cells (by id)."""
+    untested: set[int] = set()
+    for j, way in enumerate(table.directions):
+        present = [row[j] for row in table.cells if row[j].summary is not None]
+        if way not in ("higher", "lower") or len(present) < 2:
             continue
-        for row in table.cells:
-            c = row[j]
-            if c.summary is None or c is leader or id(c) in tested:
+        leader = leaders.get(j)
+        for c in present:
+            if c is leader or id(c) in tested:
                 continue
-            untested += 1
-            c.best = False
-        leader.best = True
+            untested.add(id(c))
+            c.best = c.second = False
+        if leader is not None:
+            leader.best = True
     if untested:
         table.notes.append(
-            f"{untested} cell(s) could not be tested against their column's best (one seed, without a standard error; or single "
-            "results beside rows with seeds): they are not marked either way, whatever their value"
+            f"{len(untested)} cell(s) could not be tested against their column's best (one seed without a standard error, "
+            "single results beside rows with seeds, or nothing to compare with): they are not marked either way, whatever their value"
         )
+    return untested
 
 
 def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
@@ -457,12 +479,13 @@ def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
         # the best of the rows that can be tested (two or more seeds), so that one lucky seed does not leave the column untested
         # (or, without seeds, single results with their standard errors: an evaluation's)
         seeded = [(name, c) for name, c in column if c.summary is not None and c.summary.n >= 2]
-        testable = seeded or [(name, c) for name, c in column if c.testable] or column
+        singles = [(name, c) for name, c in column if c.summary is not None and c.summary.n == 1 and c.error is not None]
+        testable = seeded if len(seeded) >= 2 else singles if len(singles) >= 2 else []
+        if not testable:
+            continue  # untested
         best_name, best = max(testable, key=lambda nc: sign * nc[1].summary.mean)  # type: ignore[union-attr]
         leaders[j] = best
         others = [(name, c) for name, c in testable if c is not best]
-        if not best.testable or not others:
-            continue  # untested
         k = len(others)  # the levels the corrected p values are held to, for the bootstrap to stop early safely
         levels = (
             [spec.alpha / i for i in range(1, k + 1)]
@@ -491,8 +514,8 @@ def _significance(table: Table, spec: Spec) -> tuple[dict[int, Cell], set[int]]:
                     r.name,
                     r.p,
                     p_adj,
-                    hedges_g(best.summary.values, c.summary.values),
-                    cliffs_delta(best.summary.values, c.summary.values),
+                    None if r.name.startswith("z") else hedges_g(best.summary.values, c.summary.values),
+                    None if r.name.startswith("z") else cliffs_delta(best.summary.values, c.summary.values),
                     (best.summary.n, c.summary.n),
                     None if c.best is False or r.name.startswith("z") else _needed(best, c, r, level),
                     spec.alpha,

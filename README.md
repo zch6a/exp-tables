@@ -49,7 +49,7 @@ worse with five seeds, so all three are bold. `--report` says what each mark res
 CIFAR-100 · Accuracy (%): TinyNet (ours) vs ViT-S +0.13 (paired t, p = 0.632, corrected p = 0.632; Hedges g 0.24,
   Cliff delta 0.20, 5 and 5 seeds): within the noise; about 256 seeds each would tell
 CIFAR-100 · Accuracy (%): TinyNet (ours) vs TinyNet w/o attention +0.86 (paired t, p = 0.062, corrected p = 0.125;
-  Hedges g 1.23, Cliff delta 0.68, 5 and 5 seeds): within the noise; about 9 seeds each would tell
+  Hedges g 1.23, Cliff delta 0.68, 5 and 5 seeds): within the noise; about 10 seeds each would tell
 CIFAR-100 · ECE (%): TinyNet (ours) vs ResNet-18 -2.89 (paired t, p < 0.001, corrected p < 0.001; Hedges g -8.11,
   Cliff delta -1.00, 5 and 5 seeds): significant
 ```

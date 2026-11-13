@@ -40,6 +40,8 @@ runs:
         set +e
         out="$(uvx -q --from "$ACTION_PATH" exp-tables "${args[@]}" --check "$TABLE" 2>&1)"  # notes and errors too
         code=$?
+        # 1 is "does not match" only when exp-tables says so; uvx's own failures (an install, a build) exit 1 too
+        if [ "$code" -eq 1 ] && ! printf '%s' "$out" | grep -q "does not match the results"; then code=2; fi
         if [ "$code" -eq 0 ]; then echo "matches=true" >> "$GITHUB_OUTPUT"; else echo "matches=false" >> "$GITHUB_OUTPUT"; fi
         echo "$out"
         {

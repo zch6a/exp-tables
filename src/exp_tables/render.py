@@ -29,15 +29,15 @@ def legend(t: Table) -> str:
     seeded = any(c.summary and c.summary.n > 1 for c in cells)
     errors = t.spread != "none" and any(c.summary and c.summary.n == 1 and c.error is not None for c in cells)
     if not seeded:
-        parts = ["one run per cell, ± its standard error as the evaluation reported it" if errors else "one run per cell: no spread"]
+        parts = ["one run per cell, ± its reported standard error where it has one" if errors else "one run per cell: no spread"]
     else:
         parts = [f"mean ± {spread} over seeds" if spread else "mean over seeds"]
         if errors:
-            parts[0] += " (a single run: ± its standard error, as reported)"
+            parts[0] += " (a single run: ± its reported standard error, if any)"
     if t.comparisons:
         parts.append(f"bold: the best, and any not significantly different from it ({_test_name(t)})")
     elif any(c.best for c in cells):  # marked as printed: no test asked, or none possible
-        parts.append("bold: the best" + ("" if t.test == "none" else " (untested: that needs two or more seeds in each row)"))
+        parts.append("bold: the best" + ("" if t.test == "none" else " (untested: that needs two or more seeds in each row, or standard errors)"))
     if any(c.second for c in cells):
         parts.append("underlined: the second best")
     return "; ".join(parts) + "."

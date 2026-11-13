@@ -173,8 +173,11 @@ def read_lm_eval(data: dict[str, object], name: str = "") -> list[Run]:
                 continue
             error = metric.endswith("_stderr")
             metric = metric.removesuffix("_stderr")
-            name = metric if how in ("", "none") else f"{metric} ({how})"
-            (run.errors if error else run.metrics)[name] = float(value)
+            label = metric if how in ("", "none") else f"{metric} ({how})"
+            if not error:
+                run.metrics[label] = float(value)
+            elif value >= 0:
+                run.errors[label] = float(value)
         run.errors = {k: v for k, v in run.errors.items() if k in run.metrics}
         if run.metrics:
             runs.append(run)
@@ -247,7 +250,9 @@ def read(path: str | Path) -> list[Run]:
             from .tensorboard import read_tensorboard
 
             return read_tensorboard(path)
-        raise ValueError(f"{path}: a folder, but neither MLflow's (mlruns/<experiment>/<run>/metrics) nor TensorBoard logs (events.out.tfevents.*)")
+        raise ValueError(
+            f"{path.as_posix()}: a folder, but neither MLflow's (mlruns/<experiment>/<run>/metrics) nor TensorBoard logs (events.out.tfevents.*)"
+        )
     text = path.read_text(encoding="utf-8-sig")
     suffix = path.suffix.lower()
     if suffix == ".json":
@@ -256,4 +261,4 @@ def read(path: str | Path) -> list[Run]:
         return read_jsonl(text, path.name)
     if suffix in (".csv", ".tsv", ".txt"):
         return read_csv(text, path.name)
-    raise ValueError(f"{path}: not a file it reads (.csv, .tsv, .json, .jsonl, or an mlruns folder)")
+    raise ValueError(f"{path.as_posix()}: not a file it reads (.csv, .tsv, .json, .jsonl, or an mlruns folder)")

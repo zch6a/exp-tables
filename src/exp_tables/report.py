@@ -29,9 +29,10 @@ def comparison_line(c: Comparison, decimals: int = 2) -> str:
             f"standard errors {c.errors[0]:.{decimals}f} and {c.errors[1]:.{decimals}f})"
         )
         return f"{head}: {'significant' if c.significant else 'within the noise'}"
+    effects = f"Hedges g {c.hedges_g:.2f}, Cliff delta {c.cliffs_delta:.2f}, " if c.hedges_g is not None and c.cliffs_delta is not None else ""
     head = (
         f"{where}: {c.best} vs {c.other} {c.difference:+.{decimals}f} ({c.test}, {_p(c.p)}, corrected {_p(c.p_adjusted)}; "
-        f"Hedges g {c.hedges_g:.2f}, Cliff delta {c.cliffs_delta:.2f}, {c.seeds[0]} and {c.seeds[1]} seeds)"
+        f"{effects}{c.seeds[0]} and {c.seeds[1]} seeds)"
     )
     if c.significant:
         return f"{head}: significant"
@@ -44,7 +45,10 @@ def comparisons(t: Table) -> str:
     if t.test == "none":
         return "No significance tests (--test none): the best is marked as printed.\n"
     if not t.comparisons:
-        return "No comparisons: a column needs a best and another row with two or more seeds each, and a known direction.\n"
+        return (
+            "No comparisons: a column needs a known direction and two rows with two or more seeds each, "
+            "or two single results with their standard errors.\n"
+        )
     decimals = {(g, m): d for g, m, d in zip(t.groups, t.metrics, t.decimals, strict=True)}
     shown = lambda s: t.labels.get(s) or s  # noqa: E731  # as the table prints it
     lines = []

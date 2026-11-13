@@ -67,7 +67,7 @@ def load_runs(inputs: list[Path], filters: dict[str, str], settings: list[str] |
     runs: list[Run] = []
     for path in inputs:
         if not path.exists():
-            raise UsageError(f"{path}: no such file or folder")
+            raise UsageError(f"{path.as_posix()}: no such file or folder")
         for run in read(path):
             if len(inputs) > 1:
                 run.fields.setdefault("file", path.stem if path.is_file() else path.name)

@@ -291,3 +291,44 @@ README and CHANGELOG updated. `--help`, first run and error messages re-read.
 Tests: 98 (were 94), Python 3.10 and 3.13; ruff (check and format), mypy clean.
 
 Next: round 4.
+
+### 2026-11-13 — polishing round 4
+
+Round 3's CI was green on every job.
+
+**Docs and packaging.** The README opens with one sentence of what it is for and says what the CI check does;
+CONTRIBUTING has the module map as it now is and how the tests are laid out (by round, one test per review finding);
+the package metadata names every reader, `py.typed` ships, the sdist leaves out the GitHub-only images (164 KB → 112
+KB); SECURITY lists what is escaped and that JSON output is strict. Checked: no network, subprocess, eval or pickle
+in the package; every workflow `contents: read` except the release job's publish step; every action pinned by commit;
+the wheel holds only the package.
+
+**Third independent review** (the standard errors, the z test, the untested-cell rule, the Action, the README; it
+confirmed the z test, Holm/BH over it, the harness reader's filters and "N/A" errors, the legend in every mix, the
+CLI's error paths and the Action's exit logic). Fixed, with tests in `tests/test_review_round3.py`:
+
+1. **The command line failed on every CSV with an `X_stderr` column** (round 3 tested only `build()`): its check and
+   layout saw the error columns as metrics, which `build()` then removed. Error columns are now left out by `resolve()`
+   and turned into errors only by `build()`, which notes which columns it read as errors; `--metrics acc_stderr`
+   says why it is not a metric. `--save-config` and the Action work on such files.
+2. **Untested cells were underlined as the second best**, even above the bold one: the second best is now chosen
+   among tested cells only.
+3. **A column with one row with seeds bolded that row untested**, even when it was the worst: a column is tested
+   among rows with seeds when two or more have them, else among single results with errors when two or more have
+   them, else not at all, and then it is left unmarked as a whole (counted in the note).
+4. **The README's report said "about 9 seeds"; the tool says 10** since round 2 counts the correction. Fixed, and a
+   test now checks every line of both READMEs' report against the tool's output.
+5. An error column for a run that lacked the metric became a column of its own (with an arrow): error columns are
+   never metrics.
+6. `read_lm_eval` reused `name` inside its loop, so runs' `source` named a metric, not the file.
+7. Smaller: z tests report no effect sizes (null in JSON; the report line gives the errors); negative errors are
+   ignored; the "no comparisons" message and the legend mention standard errors; `--test welch` (or another) on
+   single results notes that the z test was used; the remaining backslash paths in messages.
+
+From its "plausible" list: the Action treated uvx's own failures (exit 1) as a stale table; now exit 1 counts as "does
+not match" only when exp-tables says so, else it is an error (2). The legend says "reported standard error" rather
+than "as the evaluation reported it", since a CSV's `acc_se` may come from anywhere.
+
+Tests: 107 (were 98), Python 3.10 and 3.13; ruff (check and format), mypy clean.
+
+Next: round 5, then v0.1.0.

@@ -68,4 +68,4 @@ def test_untested_marks_say_so() -> None:
     runs = read_csv("method,acc\na,90\nb,80\n", "r.csv")  # one seed each: the best as printed, untested
     t = build(runs)
     assert t.cells[0][0].best and not t.comparisons
-    assert legend(t) == "one run per cell: no spread; bold: the best (untested: that needs two or more seeds in each row)."
+    assert legend(t) == "one run per cell: no spread; bold: the best (untested: that needs two or more seeds in each row, or standard errors)."
