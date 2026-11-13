@@ -73,3 +73,25 @@ Next: TensorBoard event files; Markdown and HTML tables; a config file that repr
 Tests: 46, Python 3.10 and 3.14; ruff, mypy clean.
 
 Next: the CLI, and a config file that reproduces a table (the spec as worked out, the inputs, the version).
+
+### 2026-11-13 — the command line and the config file
+
+- `exp-tables INPUT...`: CSV/TSV/JSON/JSONL files, TensorBoard folders, mlruns folders; several inputs are told apart
+  by the field `file`. Options for everything the table works out (`--rows`, `--columns`, `--metrics`, `--seed`),
+  `--filter FIELD=VALUE`, `--better`, `--label`, `--decimals`, `--spread`, `--test`, `--alpha`, `--correction`;
+  `--format latex|markdown|html|json`; `--report` (on stdout when the table goes to a file, else on stderr).
+- **A config that makes the table again**: `--save-config FILE` writes the inputs (relative to the config, with
+  `..` when needed, so the two can move together), the filters, the spec as worked out (rows, columns, seed,
+  metrics, every option), the format and the version; `--config FILE` makes the same table, byte for byte (a test
+  checks it), options given beside it overriding it.
+- **JSON**: each column (group, metric, direction, decimals), each cell's values with their seeds, the summary and
+  the marks, every comparison with "significant".
+- **Errors** name what there is ("no metric 'bleu' in the runs; their metrics: accuracy, loss"); exit 2 when no
+  table can be made, also on an unexpected error.
+- Found while testing: inputs outside the config's folder were saved as absolute paths (tying the config to one
+  machine); now relative.
+
+Tests: 53, Python 3.10 and 3.14; ruff, mypy clean.
+
+Next: README (English, Chinese) with example data, CI, the GitHub Action, the Skill, a demo image; then the release
+checks and the five polishing rounds.
