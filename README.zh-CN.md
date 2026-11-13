@@ -116,11 +116,11 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 ```python
 import exp_tables
 
-runs = exp_tables.read("results.csv")            # 也可以是 TensorBoard 目录、mlruns 目录、JSON 文件
+runs = exp_tables.read("results.csv")  # 也可以是 TensorBoard 目录、mlruns 目录、JSON 文件
 table = exp_tables.build(runs, exp_tables.Spec(metrics=["accuracy"], labels={"accuracy": "Acc. (%)"}))
-print(exp_tables.latex(table))                   # 或 markdown(table)、html(table)
-print(exp_tables.comparisons(table))             # 每个标记的依据
-print(table.notes)                               # 运行记录里看起来不对的地方（如果有）
+print(exp_tables.latex(table))  # 或 markdown(table)、html(table)
+print(exp_tables.comparisons(table))  # 每个标记的依据
+print(table.notes)  # 运行记录里看起来不对的地方（如果有）
 ```
 
 `build` 和命令行一样检查表结构（`ValueError` 会说明运行记录里有什么）。过滤、多个输入文件和 JSON 输出由命令行提供。

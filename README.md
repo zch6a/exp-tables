@@ -127,11 +127,11 @@ Wilcoxon p values by hand).
 ```python
 import exp_tables
 
-runs = exp_tables.read("results.csv")            # or a TensorBoard folder, an mlruns folder, a JSON file
+runs = exp_tables.read("results.csv")  # or a TensorBoard folder, an mlruns folder, a JSON file
 table = exp_tables.build(runs, exp_tables.Spec(metrics=["accuracy"], labels={"accuracy": "Acc. (%)"}))
-print(exp_tables.latex(table))                   # or markdown(table), html(table)
-print(exp_tables.comparisons(table))             # what each mark rests on
-print(table.notes)                               # what looks wrong in the runs, if anything
+print(exp_tables.latex(table))  # or markdown(table), html(table)
+print(exp_tables.comparisons(table))  # what each mark rests on
+print(table.notes)  # what looks wrong in the runs, if anything
 ```
 
 `build` checks the spec as the command line does (a `ValueError` names what the runs have). Filters, several inputs
