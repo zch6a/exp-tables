@@ -54,3 +54,22 @@ Next: significance tests (Welch and paired t, Wilcoxon, bootstrap), multiple-com
 Tests: 40, Python 3.10 and 3.14; ruff, mypy clean (the commit waits for ruff: it caught two issues this time).
 
 Next: TensorBoard event files; Markdown and HTML tables; a config file that reproduces a table; the CLI.
+
+### 2026-11-13 — TensorBoard, Markdown, HTML
+
+- **TensorBoard** (`tensorboard.py`), without TensorFlow: the TFRecord framing with both checksums (CRC32C, checked
+  against the standard check value; a record whose checksum fails, or that is cut short by a run still writing,
+  ends the file), and the protobuf fields a scalar needs: Event (wall time, step, summary), Summary.Value (tag,
+  `simple_value`, tensor), TensorProto (dtype; `tensor_content` or packed values) — so PyTorch's SummaryWriter and
+  TF2's `tf.summary.scalar` are both read. Each folder holding event files is a run; `ours/lr=0.1/seed_2` gives
+  method `ours`, field `lr` = 0.1, seed 2. Each tag's value at its last step.
+- **Markdown**: best in bold, second best `<ins>`, the spread after ±, column groups joined to the metric's name,
+  then a legend saying what the marks and the spread mean (and which test, α, correction).
+- **HTML**: a fragment with spanning group headers, `<b>` / `<u>`, the spread `<small>`, every label escaped, the
+  legend as the caption.
+- Tests write the event files byte by byte (a varint and field encoder, the TFRecord framing), both kinds of scalar,
+  a cut record and a corrupt checksum.
+
+Tests: 46, Python 3.10 and 3.14; ruff, mypy clean.
+
+Next: the CLI, and a config file that reproduces a table (the spec as worked out, the inputs, the version).
