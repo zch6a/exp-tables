@@ -332,3 +332,28 @@ than "as the evaluation reported it", since a CSV's `acc_se` may come from anywh
 Tests: 107 (were 98), Python 3.10 and 3.13; ruff (check and format), mypy clean.
 
 Next: round 5, then v0.1.0.
+
+### 2026-11-13 — polishing round 5
+
+Round 4's CI was green on every job.
+
+**As a new user would.** `uvx --from git+https://github.com/zch6a/exp-tables exp-tables` with an empty uv cache:
+installs and runs (version, the example's table). In PowerShell 5: `> table.tex` writes a UTF-8 file with a BOM (and
+UTF-16 elsewhere) and `--check` reads both; labels with spaces, `%` and Chinese, and `--filter "method=TinyNet
+(ours),ResNet-18"`, come through. Found:
+
+- **Wildcards.** PowerShell and cmd pass `results_*.json` to the program as it is, so "no such file". A pattern that
+  is not a file is now expanded by the tool (sorted; one that matches nothing still says "no such file").
+- **`--help`** lagged behind: the lm-evaluation-harness input, `a,b` filters, `--check`, the notes, what the default
+  metrics leave out. Rewritten with an example per use.
+
+**Everything once more.** Eight input kinds (CSV, TSV, JSON list, JSON by name, JSON Lines, MLflow, TensorBoard,
+harness files by wildcard) × four formats, each made with `--report` and `--save-config`, then remade from the config
+with `--check` against itself: 32 of 32 made, matched and marked.
+
+**The rest of the round.** CHANGELOG rewritten for the release as the tool now is; README unchanged (its report is
+under test since round 4); ruff check and format, mypy, tests on 3.10 and 3.13.
+
+Tests: 108 (were 107).
+
+Next: v0.1.0.

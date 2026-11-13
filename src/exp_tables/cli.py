@@ -1,16 +1,20 @@
-"""exp-tables: experiment results to a paper's table.
+"""exp-tables: experiment results to a paper's table, bold only where the seeds support it.
 
-exp-tables results.csv                         a table worked out from the runs, as LaTeX
-exp-tables runs/ --format markdown             TensorBoard logs or an mlruns folder
-exp-tables a.json b.json --rows file           several files (the field "file" tells them apart)
-exp-tables results.csv --report                and what each mark rests on
-exp-tables results.csv --save-config table.json   then: exp-tables --config table.json
+exp-tables results.csv                           a table worked out from the runs, as LaTeX
+exp-tables runs/ --format markdown               TensorBoard logs or an mlruns folder
+exp-tables results_*.json --format markdown      lm-evaluation-harness results, one file per model
+exp-tables results.csv --report                  and what each mark rests on
+exp-tables results.csv --save-config table.json  then, any time: exp-tables --config table.json
+exp-tables --config table.json --check paper/table.tex   does the paper's table still match? (exit 1 if not)
+
+Notes on stderr say what looks wrong in the runs (runs sharing a seed, cells that could not be tested).
 """
 
 from __future__ import annotations
 
 import argparse
 import difflib
+import glob
 import json
 import math
 import os
@@ -65,6 +69,13 @@ def load_runs(inputs: list[Path], filters: dict[str, str], settings: list[str] |
     named settings (and the filtered fields) made fields when they were read as metrics, keeping those whose fields
     match every filter."""
     runs: list[Run] = []
+    expanded: list[Path] = []
+    for path in inputs:  # a pattern the shell did not expand (PowerShell and cmd leave results_*.json as it is)
+        if not path.exists() and glob.has_magic(str(path)):
+            expanded += sorted(Path(p) for p in glob.glob(str(path), recursive=True)) or [path]
+        else:
+            expanded.append(path)
+    inputs = expanded
     for path in inputs:
         if not path.exists():
             raise UsageError(f"{path.as_posix()}: no such file or folder")
@@ -215,15 +226,36 @@ def _main(argv: list[str] | None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(prog="exp-tables", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter,
                                  epilog="exit status: 0 done, 1 when --check finds a difference, 2 when it could not make the table")  # fmt: skip
-    ap.add_argument("inputs", nargs="*", type=Path, metavar="INPUT", help="CSV, TSV, JSON or JSONL files, TensorBoard log folders, mlruns folders")
+    ap.add_argument(
+        "inputs",
+        nargs="*",
+        type=Path,
+        metavar="INPUT",
+        help="CSV, TSV, JSON or JSONL files (lm-evaluation-harness results too), TensorBoard log folders, mlruns folders",
+    )
     ap.add_argument("--rows", help="the field(s) naming a row, comma-separated (default: method, model, … or the first that varies)")
     ap.add_argument("--columns", help="the field(s) grouping columns, or none (default: another field that varies within a row)")
-    ap.add_argument("--metrics", help="the metrics shown, in order (default: all)")
+    ap.add_argument(
+        "--metrics",
+        help="the metrics shown, in order (default: all but logged settings like a learning rate, and X_stderr columns: X's standard error)",
+    )
     ap.add_argument("--seed", help="the field telling seeds apart (default: by its name: seed, trial, fold, …)")
-    ap.add_argument("--filter", action="append", default=[], metavar="FIELD=VALUE", help="keep only the runs with this value (repeatable)")
+    ap.add_argument(
+        "--filter",
+        action="append",
+        default=[],
+        metavar="FIELD=VALUE",
+        help="keep only the runs with this value; a,b for either; numbers compare as numbers (repeatable)",
+    )
     ap.add_argument("--better", action="append", default=[], metavar="METRIC=higher|lower", help="which way is better (default: from its name)")
     ap.add_argument("--label", action="append", default=[], metavar="NAME=TEXT", help="how the table prints a metric, field or value")
-    ap.add_argument("--decimals", action="append", default=[], metavar="METRIC=N", help="decimals (default: two significant digits of the spread)")
+    ap.add_argument(
+        "--decimals",
+        action="append",
+        default=[],
+        metavar="METRIC=N",
+        help="decimals (default: two significant digits of the column's typical spread)",
+    )
     ap.add_argument(
         "--spread", choices=["std", "sem", "ci", "none"], help="after the mean: standard deviation (default), standard error, 95%% CI, nothing"
     )

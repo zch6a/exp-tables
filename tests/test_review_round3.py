@@ -77,6 +77,16 @@ def test_the_readme_report_is_what_the_tool_says(readme: str, tmp_path: Path, ca
     assert shown and all(line in report for line in shown), [line for line in shown if line not in report]
 
 
+def test_a_wildcard_the_shell_left_alone_is_expanded(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for i, value in enumerate((0.5, 0.6)):
+        (tmp_path / f"results_{i}.json").write_text(json.dumps({"model": f"m{i}", "acc": value}), encoding="utf-8")
+    assert main([str(tmp_path / "results_*.json"), "--format", "markdown"]) == 0  # PowerShell passes the pattern as it is
+    out = capsys.readouterr().out
+    assert "| m0 |" in out and "| m1 |" in out
+    assert main([str(tmp_path / "nothing_*.json")]) == 2
+    assert "no such file or folder" in capsys.readouterr().err
+
+
 def test_other_tests_on_single_results_say_so() -> None:
     t = build(read_csv(SE_CSV, "r.csv"), __import__("exp_tables").Spec(test="welch"))
     assert any("not by the welch test" in n for n in t.notes)
