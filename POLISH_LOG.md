@@ -29,3 +29,28 @@ Tests: 19 (synthetic results written by the tests), Python 3.10 and 3.14; ruff, 
 
 Next: significance tests (Welch and paired t, Wilcoxon, bootstrap), multiple-comparison corrections, effect sizes,
 "within noise" marks and how many seeds; TensorBoard event files; Markdown and HTML; a config file; the CLI.
+
+### 2026-11-13 — significance
+
+- **Tests** (`significance.py`, standard library only): Welch's t (unequal variances), the paired t test, the
+  Wilcoxon signed-rank test (exact by dynamic programming up to 25 pairs without tied differences, the normal
+  approximation with the tie correction beyond), a seeded bootstrap of the difference in means; Holm's and
+  Benjamini-Hochberg's corrections; Hedges' g and Cliff's delta.
+- **Checked by hand and independently**: the t distribution at fractional degrees of freedom against a numerical
+  integration of its density (agreement to six decimals; Welch's example p = 0.1075); Wilcoxon's exact p for
+  all-positive differences (2/2^5) and for one negative (4/2^5); the corrections never lower a p value. Three of my
+  own doctest expectations were wrong (a paired t without the square root of n, two hand roundings) and the code
+  right; each was worked through before changing it.
+- **How many seeds**: first a normal approximation, which said "about 1 seed" for a comparison that already had 2
+  and was not significant. Now the t-based power at n's own degrees of freedom, and for paired seeds the spread of
+  the differences: "3 seeds each".
+- **The table**: in each column with a direction, the best against every other row with two or more seeds (paired t
+  when the seeds pair up, else Welch's; or the test asked for), the column's p values corrected together; rows not
+  significantly different from the best are marked best too ("tied"), and a second best is underlined only after a
+  single best. With `test="none"`, the best as printed, as before.
+- **The report** (`report.py`): each comparison in a line: the difference, the test, p before and after the
+  correction, the effect sizes, the seeds, and "significant" or "within the noise; about N seeds each would tell".
+
+Tests: 40, Python 3.10 and 3.14; ruff, mypy clean (the commit waits for ruff: it caught two issues this time).
+
+Next: TensorBoard event files; Markdown and HTML tables; a config file that reproduces a table; the CLI.
