@@ -4,7 +4,7 @@
 
 **把实验结果变成论文需要的表格：只有种子支持的才加粗。** exp-tables 读取你的运行记录（CSV、wandb 导出、JSON、TensorBoard 日志、
 MLflow、lm-evaluation-harness 结果），对每个指标跨种子求均值，把每个方法和该列最佳的方法做显著性检验，写出 booktabs LaTeX、Markdown 或 HTML。
-加粗的是最佳，以及种子无法与它区分开的所有方法；放进 CI 后，论文里的表和结果对不上时它会告诉你。
+加粗的是最佳，以及种子无法与它区分开的所有方法。放进 CI 后，论文里的表和结果对不上时它会告诉你。
 
 <a href="https://github.com/zch6a/exp-tables/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/zch6a/exp-tables/actions/workflows/ci.yml/badge.svg"></a>
 <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-blue">
@@ -17,7 +17,7 @@ MLflow、lm-evaluation-harness 结果），对每个指标跨种子求均值，�
 
 ---
 
-大多数结果表是手工做的：复制数字、求平均、把最大的加粗。于是不管差距是真实的提升还是某个种子运气好，加粗都在说“最佳”；
+大多数结果表是手工做的：复制数字、求平均、把最大的加粗。于是不管差距是真实的提升还是某个种子运气好，加粗都在说“最佳”。
 而且只要重跑一次实验，表格就和结果对不上了。exp-tables 从运行记录直接生成表格，说明哪些差异有种子支持，并检查论文里的表是否仍与结果一致。
 
 <p align="center"><img alt="exp-tables 在示例上的输出：CIFAR-100 准确率一列中 ours、ViT-S 和消融版本都加粗，下面是说明原因的报告" src="docs/demo.png" width="880"></p>
@@ -104,8 +104,8 @@ exp-tables --config table.json --check paper/table.tex  # 论文里的表还和�
 
 ## 统计方法
 
-跨种子的均值与样本标准差；95% 区间来自 Student t 分布。每个有方向的列：其最佳方法与每个至少有两个种子的其他方法比较——
-两者种子相同时用配对 t 检验，否则用 Welch 检验（也可选 Wilcoxon 符号秩检验，25 对以内精确计算、含并列，或固定随机种子的 bootstrap）——
+跨种子的均值与样本标准差；95% 区间来自 Student t 分布。每个有方向的列：其最佳方法与每个至少有两个种子的其他方法比较。
+两者种子相同时用配对 t 检验，否则用 Welch 检验（也可选 Wilcoxon 符号秩检验，25 对以内精确计算、含并列，或固定随机种子的 bootstrap）。
 同一列的 p 值一起校正（默认 Holm）。加粗由检验决定：没有显著差于最佳（在有两个以上种子的行中）的行加粗，即使印出来的数字相同也一样。只有一个种子的行无法检验，不作标记，并会提示；整张表都无法检验时，按印出的数字标最佳。带标准误的单次结果（评测框架在测试样本上算出的标准误；CSV 里的 `acc_stderr` 或 `acc_se` 列）用 z 检验比较，标准误显示在 ± 后面（把两者的误差当作独立，同一批测试样本上测得时这样更保守）。效应量：Hedges g 和 Cliff delta。“所需种子数”：以 0.8 的功效检出所见大小差异所需的最小 n，
 按 n 自身的自由度用 t 分布计算（配对种子按差值的波动）。
 
@@ -144,7 +144,7 @@ jobs:
           table: paper/tables/main.tex  # 论文里 \input 的那张表
 ```
 
-job summary 里会列出不同的行、表格本身，以及其中标记的依据。
+job summary 里会列出不同的行，并附上表格本身和其中标记的依据。
 
 ## 局限
 
