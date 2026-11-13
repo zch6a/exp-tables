@@ -357,3 +357,13 @@ under test since round 4); ruff check and format, mypy, tests on 3.10 and 3.13.
 Tests: 108 (were 107).
 
 Next: v0.1.0.
+
+### 2026-11-13 — v0.1.0
+
+Round 5's CI was green on every job. Tagged `v0.1.0` (annotated) on cb4e89d and pushed; the release workflow's build
+job (tests, build, read-only) and publish job (gh only) both passed: the GitHub release "exp-tables 0.1.0" has the
+CHANGELOG section, the wheel and the source archive, and `v0` points at the release for `zch6a/exp-tables@v0`.
+Not published to PyPI (the user's decision).
+
+Five rounds: ten public results files, MultiBERTs TensorBoard logs and Open LLM Leaderboard results tried; three
+independent reviews; 55 tests at the first commit, 108 at the release.
