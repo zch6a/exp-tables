@@ -168,7 +168,11 @@ def read(path: Path) -> list[Run]:
             return read_mlflow(path)
         if (path / "mlruns").is_dir():
             return read_mlflow(path / "mlruns")
-        raise ValueError(f"{path}: a folder, but not MLflow's (mlruns/<experiment>/<run>/metrics)")
+        if any(path.rglob("events.out.tfevents.*")):
+            from .tensorboard import read_tensorboard
+
+            return read_tensorboard(path)
+        raise ValueError(f"{path}: a folder, but neither MLflow's (mlruns/<experiment>/<run>/metrics) nor TensorBoard logs (events.out.tfevents.*)")
     text = path.read_text(encoding="utf-8-sig")
     suffix = path.suffix.lower()
     if suffix == ".json":
